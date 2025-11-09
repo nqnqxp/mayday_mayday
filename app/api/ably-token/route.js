@@ -1,4 +1,4 @@
-import Ably from 'ably/promises'
+import Ably from 'ably'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -14,10 +14,22 @@ const getRestClient = (() => {
     if (!key) {
       return null
     }
-    client = new Ably.Rest({ key })
+    const AblySdk = Ably?.Rest ? Ably : Ably?.default ?? Ably
+    client = new AblySdk.Rest({ key })
     return client
   }
 })()
+
+const createTokenRequest = (rest, params) =>
+  new Promise((resolve, reject) => {
+    rest.auth.createTokenRequest(params, (error, tokenRequest) => {
+      if (error) {
+        reject(error)
+        return
+      }
+      resolve(tokenRequest)
+    })
+  })
 
 export async function GET(request) {
   const rest = getRestClient()
@@ -36,7 +48,7 @@ export async function GET(request) {
   const clientId = searchParams.get('clientId') ?? undefined
 
   try {
-    const tokenRequest = await rest.auth.createTokenRequest({ clientId })
+    const tokenRequest = await createTokenRequest(rest, { clientId })
 
     return new Response(JSON.stringify(tokenRequest), {
       status: 200,
