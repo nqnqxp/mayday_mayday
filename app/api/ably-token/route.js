@@ -47,7 +47,9 @@ export async function GET(request) {
     nonce,
   ]
 
-  const mac = crypto.createHmac('sha256', keySecret).update(signingParts.join('\n')).digest('base64')
+  const stringToSign = `${signingParts.join('\n')}\n`
+
+  const mac = crypto.createHmac('sha256', keySecret).update(stringToSign).digest('base64')
 
   const tokenRequest = {
     keyName,
