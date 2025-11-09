@@ -1,0 +1,23 @@
+
+> mayday_mayday@1.0.0 dev
+> next dev
+
+   ▲ Next.js 16.0.1 (Turbopack)
+   - Local:        http://localhost:3000
+   - Network:      http://192.168.1.159:3000
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 468ms
+ GET /api/connect 200 in 76ms (compile: 65ms, render: 11ms)
+[connect] socket connected { code: 'FOO123' }
+[connect] socket connected { code: 'FOO123' }
+[connect] socket closed { code: 'FOO123', closeCode: 1000, reason: 'done' }
+[connect] socket closing { code: 'FOO123', reason: undefined }
+ GET /page2 200 in 3.0s (compile: 2.5s, render: 403ms)
+ GET /page3 200 in 1494ms (compile: 1363ms, render: 131ms)
+ GET /api/connect 200 in 25ms (compile: 9ms, render: 15ms)
+ GET /api/connect 200 in 12ms (compile: 7ms, render: 5ms)
+ POST /api/rooms 201 in 424ms
+[connect] socket connected { code: 'HTZUQS' }
+[connect] socket connected { code: 'HTZUQS' }

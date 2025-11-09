@@ -1,6 +1,6 @@
 # Mayday Mayday - Next.js + Three.js Project
 
-A Next.js project set up for Three.js with API proxy capabilities.
+A Next.js project set up for Three.js with API proxy capabilities and peer room linking.
 
 ## Setup
 
@@ -19,6 +19,13 @@ Replace `http://localhost:3001` with the URL of your other site when it's ready.
 ```bash
 npm run dev
 ```
+
+## Real-Time Rooms
+
+- Use the **Room Connector** panel on `/page2` or `/page3` to open a room or join an existing code.
+- Clicking **Open Room** generates (or reserves) a shared code via `POST /api/rooms`.
+- Joining sends both participants through a WebSocket bridge handled by `pages/api/connect` (powered by `ws`).
+- The client warms up the endpoint automatically, so the first connection succeeds even after a fresh deploy.
 
 ## API Proxy
 
@@ -57,6 +64,8 @@ fetch('/api/proxy/endpoint/path', {
 ## Project Structure
 
 - `app/` - Next.js app directory
-- `components/` - React/Three.js components
+- `components/` - React/Three.js components (includes the room connector UI)
 - `lib/` - Utility functions and API helpers
+- `pages/api/` - Node runtime endpoints (WebSocket bridge)
 - `app/api/proxy/` - API proxy routes
+- `app/api/rooms/` - Room management endpoints

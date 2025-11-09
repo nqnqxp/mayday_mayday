@@ -1,5 +1,6 @@
 import Scene from '@/components/Scene'
 import Link from 'next/link'
+import RoomConnector from '@/components/RoomConnector'
 
 export default function Page3() {
   return (
@@ -21,6 +22,7 @@ export default function Page3() {
         <Link href="/page2" style={{ color: 'white', textDecoration: 'none' }}>Page 2</Link>
         <Link href="/page3" style={{ color: 'white', textDecoration: 'underline' }}>Page 3</Link>
       </div>
+      <RoomConnector pageId="Page 3" />
       <Scene>
         {/* Add your Three.js content for page 3 here */}
       </Scene>
