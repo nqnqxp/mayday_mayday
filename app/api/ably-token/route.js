@@ -1,43 +1,26 @@
-import { createRequire } from 'module'
-
-const require = createRequire(import.meta.url)
-const { Rest } = require('ably')
+import crypto from 'crypto'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-const getRestClient = (() => {
-  let client = null
-  return () => {
-    if (client) {
-      return client
-    }
-    const key = process.env.ABLY_API_KEY
-    if (!key) {
-      return null
-    }
-    client = new Rest(key)
-    return client
-  }
-})()
-
-const createTokenRequest = (rest, params) =>
-  new Promise((resolve, reject) => {
-    rest.auth.createTokenRequest(params, (error, tokenRequest) => {
-      if (error) {
-        reject(error)
-        return
-      }
-      resolve(tokenRequest)
-    })
-  })
-
 export async function GET(request) {
-  const rest = getRestClient()
+  const apiKey = process.env.ABLY_API_KEY
 
-  if (!rest) {
+  if (!apiKey) {
     return new Response(JSON.stringify({ error: 'Ably API key is not configured' }), {
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+      },
+    })
+  }
+
+  const [keyName, keySecret] = apiKey.split(':')
+
+  if (!keyName || !keySecret) {
+    return new Response(JSON.stringify({ error: 'Invalid Ably API key format' }), {
       status: 500,
       headers: {
         'Content-Type': 'application/json',
@@ -48,10 +31,38 @@ export async function GET(request) {
 
   const { searchParams } = new URL(request.url)
   const clientId = searchParams.get('clientId') ?? undefined
+  const nonce = crypto.randomBytes(16).toString('hex')
+  const timestamp = Date.now()
+  const ttl = 60 * 60 * 1000 // 1 hour
+  const capability = JSON.stringify({
+    '*': ['publish', 'subscribe', 'presence'],
+  })
+
+  const signingParts = [
+    keyName,
+    ttl.toString(),
+    capability,
+    clientId ?? '',
+    timestamp.toString(),
+    nonce,
+  ]
+
+  const mac = crypto.createHmac('sha256', keySecret).update(signingParts.join('\n')).digest('base64')
+
+  const tokenRequest = {
+    keyName,
+    ttl,
+    capability,
+    timestamp,
+    nonce,
+    mac,
+  }
+
+  if (clientId) {
+    tokenRequest.clientId = clientId
+  }
 
   try {
-    const tokenRequest = await createTokenRequest(rest, { clientId })
-
     return new Response(JSON.stringify(tokenRequest), {
       status: 200,
       headers: {
@@ -60,7 +71,7 @@ export async function GET(request) {
       },
     })
   } catch (error) {
-    console.error('[ably-token] failed to create token request', error)
+    console.error('[ably-token] failed to generate token request', error)
     return new Response(JSON.stringify({ error: 'Failed to generate Ably token' }), {
       status: 500,
       headers: {
