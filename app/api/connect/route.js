@@ -12,6 +12,7 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const rawCode = searchParams.get('code')
   const upgradeHeader = request.headers.get('upgrade')
+
   console.log('[connect] incoming request', {
     url: request.url,
     upgrade: upgradeHeader,
@@ -27,25 +28,33 @@ export async function GET(request) {
 
   const code = rawCode.trim().toUpperCase()
 
-  if (!upgradeHeader || upgradeHeader.toLowerCase() !== 'websocket') {
+  if (!upgradeHeader || !upgradeHeader.toLowerCase().includes('websocket')) {
     return new Response(JSON.stringify({ ok: true, message: 'Ready to accept WebSocket upgrade' }), {
       status: 200,
       headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
     })
   }
 
-  const { 0: client, 1: server } = new WebSocketPair()
-  server.accept()
+  if (typeof Deno === 'undefined' || !Deno.upgradeWebSocket) {
+    console.error('[connect] upgrade attempted but Deno.upgradeWebSocket is unavailable')
+    return new Response(JSON.stringify({ error: 'WebSocket upgrades are not supported in this environment' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+
+  const { socket, response } = Deno.upgradeWebSocket(request)
 
   const room = ensureRoom(code)
   const { clients } = room
-  clients.add(server)
+  clients.add(socket)
 
   const broadcast = (payload, exclude) => {
     clients.forEach((peer) => {
       if (peer === exclude) return
       try {
-        if (peer.readyState === WS_OPEN) {
+        const readyState = peer.readyState
+        if (readyState === WS_OPEN || readyState === peer.OPEN) {
           peer.send(JSON.stringify(payload))
         }
       } catch (error) {
@@ -54,33 +63,41 @@ export async function GET(request) {
     })
   }
 
-  try {
-    server.send(
-      JSON.stringify({
-        type: 'system',
-        message: `Connected to room ${getRoomLabel(room)}`,
-        peers: clients.size,
-      })
-    )
+  const sendInitialMessages = () => {
+    try {
+      socket.send(
+        JSON.stringify({
+          type: 'system',
+          message: `Connected to room ${getRoomLabel(room)}`,
+          peers: clients.size,
+        })
+      )
 
-    broadcast(
-      {
-        type: 'system',
-        message: 'Another participant joined the room',
-        peers: clients.size,
-      },
-      server
-    )
-  } catch (error) {
-    console.error('[connect] initial send failed', error)
+      broadcast(
+        {
+          type: 'system',
+          message: 'Another participant joined the room',
+          peers: clients.size,
+        },
+        socket
+      )
+    } catch (error) {
+      console.error('[connect] initial send failed', error)
+    }
   }
 
-  server.addEventListener('message', (event) => {
-    broadcast({ type: 'relay', payload: event.data }, server)
+  if (socket.readyState === WS_OPEN || socket.readyState === socket.OPEN) {
+    sendInitialMessages()
+  } else {
+    socket.addEventListener('open', sendInitialMessages, { once: true })
+  }
+
+  socket.addEventListener('message', (event) => {
+    broadcast({ type: 'relay', payload: event.data }, socket)
   })
 
   const cleanup = (reason) => {
-    clients.delete(server)
+    clients.delete(socket)
     if (clients.size === 0) {
       deleteRoom(room.code)
     } else {
@@ -91,20 +108,20 @@ export async function GET(request) {
           peers: clients.size,
           reason,
         },
-        server
+        socket
       )
     }
   }
 
-  server.addEventListener('close', (event) => {
+  socket.addEventListener('close', (event) => {
     console.log('[connect] socket closed', { code: room.code, closeCode: event.code, reason: event.reason })
     cleanup(event.reason)
   })
 
-  server.addEventListener('error', (event) => {
+  socket.addEventListener('error', (event) => {
     console.error('[connect] websocket error', event.message)
     cleanup(event.message)
   })
 
-  return new Response(null, { status: 101, webSocket: client })
+  return response
 }
