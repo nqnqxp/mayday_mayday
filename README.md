@@ -31,7 +31,7 @@ npm run dev
 
 | Scenario | `NEXT_PUBLIC_WS_PATH` | `NEXT_PUBLIC_WS_WARMUP` |
 | --- | --- | --- |
-| Local development (defaults) | `/api/connect` | `/api/connect` |
+| Local development (defaults) | `/api/ws` | `/api/connect` |
 | Vercel deployment | `/api/connect` | `/api/connect` |
 | Custom WebSocket service | Full `wss://...` URL | Optional relative URL for warm-up |
 

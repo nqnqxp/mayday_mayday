@@ -10,6 +10,11 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const rawCode = searchParams.get('code')
   const upgradeHeader = request.headers.get('upgrade')
+  console.log('[connect] incoming request', {
+    url: request.url,
+    upgrade: upgradeHeader,
+    headers: Object.fromEntries(request.headers.entries()),
+  })
 
   if (!rawCode) {
     return new Response(JSON.stringify({ error: 'Missing room code' }), {

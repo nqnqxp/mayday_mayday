@@ -10,8 +10,11 @@ const STATUS_LABEL = {
   error: 'Error - check console',
 }
 
-const WS_PATH = process.env.NEXT_PUBLIC_WS_PATH ?? '/api/connect'
-const WARMUP_PATH = process.env.NEXT_PUBLIC_WS_WARMUP ?? '/api/connect'
+const defaultWsPath = process.env.NODE_ENV === 'development' ? '/api/ws' : '/api/connect'
+const defaultWarmupPath = process.env.NODE_ENV === 'development' ? '/api/ws' : '/api/connect'
+
+const WS_PATH = process.env.NEXT_PUBLIC_WS_PATH ?? defaultWsPath
+const WARMUP_PATH = process.env.NEXT_PUBLIC_WS_WARMUP ?? defaultWarmupPath
 
 const createId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
