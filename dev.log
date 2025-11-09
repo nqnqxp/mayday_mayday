@@ -21,3 +21,72 @@
  POST /api/rooms 201 in 424ms
 [connect] socket connected { code: 'HTZUQS' }
 [connect] socket connected { code: 'HTZUQS' }
+ GET /page2 200 in 160ms (compile: 56ms, render: 104ms)
+[connect] socket closed { code: 'HTZUQS', closeCode: 1001, reason: '' }
+[connect] socket closing { code: 'HTZUQS', reason: undefined }
+ GET /api/connect 200 in 4ms (compile: 2ms, render: 2ms)
+ GET /page3 200 in 135ms (compile: 53ms, render: 82ms)
+[connect] socket closed { code: 'HTZUQS', closeCode: 1001, reason: '' }
+[connect] socket closing { code: 'HTZUQS', reason: undefined }
+ GET /api/connect 200 in 4ms (compile: 1365µs, render: 3ms)
+ POST /api/rooms 201 in 11ms
+[connect] socket connected { code: 'XNQ7PG' }
+[connect] socket connected { code: 'XNQ7PG' }
+ ✓ Compiled in 22ms
+ ✓ Compiled in 20ms
+[connect] socket closed { code: 'XNQ7PG', closeCode: 1001, reason: '' }
+[connect] socket closing { code: 'XNQ7PG', reason: undefined }
+ GET /page2 200 in 215ms (compile: 90ms, render: 125ms)
+ GET /api/connect 200 in 6ms (compile: 3ms, render: 3ms)
+ GET /page3 200 in 144ms (compile: 77ms, render: 68ms)
+[connect] socket closed { code: 'XNQ7PG', closeCode: 1001, reason: '' }
+[connect] socket closing { code: 'XNQ7PG', reason: undefined }
+ GET /api/connect 200 in 1946µs (compile: 869µs, render: 1076µs)
+ POST /api/rooms 201 in 11ms
+[connect] socket connected { code: 'UNNDBN' }
+ POST /api/rooms 201 in 8ms
+[connect] socket closed { code: 'UNNDBN', closeCode: 1001, reason: '' }
+[connect] socket closing { code: 'UNNDBN', reason: undefined }
+ GET /page2 200 in 36ms (compile: 5ms, render: 31ms)
+ GET /api/connect 200 in 4ms (compile: 1412µs, render: 3ms)
+ POST /api/rooms 201 in 9ms
+[connect] socket connected { code: 'WND9Q9' }
+[connect] socket connected { code: 'R8TWCC' }
+[connect] socket closed { code: 'WND9Q9', closeCode: 1001, reason: '' }
+[connect] socket closing { code: 'WND9Q9', reason: undefined }
+ GET /page2 200 in 44ms (compile: 6ms, render: 38ms)
+ GET /api/connect 200 in 6ms (compile: 1464µs, render: 4ms)
+[connect] socket closed { code: 'R8TWCC', closeCode: 1001, reason: '' }
+[connect] socket closing { code: 'R8TWCC', reason: undefined }
+ GET /page3 200 in 47ms (compile: 8ms, render: 39ms)
+ GET /api/connect 200 in 3ms (compile: 988µs, render: 1902µs)
+ GET /apple-touch-icon-precomposed.png 404 in 292ms (compile: 226ms, render: 66ms)
+ GET /apple-touch-icon.png 404 in 286ms (compile: 205ms, render: 81ms)
+ GET / 200 in 267ms (compile: 219ms, render: 48ms)
+ ✓ Compiled in 13ms
+ GET / 200 in 281ms (compile: 86ms, render: 195ms)
+ ✓ Compiled in 2ms
+ GET / 200 in 271ms (compile: 75ms, render: 196ms)
+ ✓ Compiled in 2ms
+ GET / 200 in 265ms (compile: 76ms, render: 189ms)
+ GET /page2 200 in 62ms (compile: 7ms, render: 54ms)
+ GET /api/connect 200 in 6ms (compile: 3ms, render: 3ms)
+ ✓ Compiled in 13ms
+ ✓ Compiled in 3ms
+ GET /page2 200 in 272ms (compile: 87ms, render: 185ms)
+ GET /api/connect 200 in 3ms (compile: 1406µs, render: 1681µs)
+ GET /page3 200 in 308ms (compile: 91ms, render: 216ms)
+ GET /api/connect 200 in 3ms (compile: 1688µs, render: 1264µs)
+ GET /page2 200 in 53ms (compile: 6ms, render: 47ms)
+ GET /api/connect 200 in 2ms (compile: 982µs, render: 1034µs)
+ ✓ Compiled in 1ms
+ ✓ Compiled in 1ms
+ ✓ Compiled in 37ms
+ ✓ Compiled in 1ms
+ ✓ Compiled in 11ms
+ GET /page3 200 in 290ms (compile: 89ms, render: 201ms)
+ GET /api/connect 200 in 3ms (compile: 1602µs, render: 1134µs)
+ GET /page2 200 in 237ms (compile: 80ms, render: 158ms)
+ GET /api/connect 200 in 6ms (compile: 5ms, render: 980µs)
+ ✓ Compiled in 5ms
+ GET / 200 in 291ms (compile: 92ms, render: 199ms)

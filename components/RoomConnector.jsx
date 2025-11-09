@@ -30,11 +30,20 @@ export default function RoomConnector({ pageId }) {
   const [status, setStatus] = useState('idle')
   const [logs, setLogs] = useState([])
   const [creating, setCreating] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
   const wsRef = useRef(null)
 
   useEffect(() => {
     warmUpWebSocketEndpoint()
   }, [])
+
+  useEffect(() => {
+    if (status === 'connected') {
+      setCollapsed(true)
+    } else if (status === 'idle' || status === 'connecting' || status === 'error') {
+      setCollapsed(false)
+    }
+  }, [status])
 
   const appendLog = (entry) => {
     setLogs((prev) => {
@@ -141,12 +150,14 @@ export default function RoomConnector({ pageId }) {
     ws.onclose = () => {
       if (status !== 'idle') {
         setStatus('closed')
+        setCollapsed(false)
         appendLog('Connection closed')
       }
     }
 
     ws.onerror = () => {
       setStatus('error')
+      setCollapsed(false)
       appendLog('WebSocket error – check console for details')
     }
   }
@@ -154,6 +165,7 @@ export default function RoomConnector({ pageId }) {
   const handleDisconnect = () => {
     closeExistingSocket()
     setStatus('idle')
+    setCollapsed(false)
     appendLog('Disconnected')
   }
 
@@ -182,6 +194,49 @@ export default function RoomConnector({ pageId }) {
     }
   }, [])
 
+  const collapsedBadge = (
+    <div
+      style={{
+        position: 'absolute',
+        top: 80,
+        right: 20,
+        zIndex: 1200,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        padding: '10px 14px',
+        borderRadius: '999px',
+        background: 'rgba(0, 0, 0, 0.65)',
+        border: '1px solid rgba(255, 255, 255, 0.15)',
+        color: 'white',
+        cursor: 'pointer',
+        backdropFilter: 'blur(4px)',
+      }}
+      onClick={() => setCollapsed(false)}
+    >
+      <span
+        style={{
+          display: 'inline-block',
+          width: '10px',
+          height: '10px',
+          borderRadius: '50%',
+          background:
+            status === 'connected'
+              ? '#34C759'
+              : status === 'connecting'
+                ? '#FF9500'
+                : '#FF453A',
+        }}
+      />
+      <span style={{ fontSize: '12px' }}>{statusLabel}</span>
+      <span style={{ fontSize: '12px', opacity: 0.8 }}>(click to expand)</span>
+    </div>
+  )
+
+  if (collapsed) {
+    return collapsedBadge
+  }
+
   return (
     <div
       style={{
@@ -198,8 +253,22 @@ export default function RoomConnector({ pageId }) {
         border: '1px solid rgba(255, 255, 255, 0.1)',
       }}
     >
-      <h3 style={{ marginTop: 0 }}>Room Connector</h3>
-      <p style={{ fontSize: '12px', marginTop: 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h3 style={{ margin: 0 }}>Room Connector</h3>
+        <button
+          onClick={() => setCollapsed(true)}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'rgba(255,255,255,0.7)',
+            cursor: 'pointer',
+            fontSize: '12px',
+          }}
+        >
+          Minimize
+        </button>
+      </div>
+      <p style={{ fontSize: '12px', marginTop: '6px' }}>
         Create a room code or join an existing one.
       </p>
       <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
