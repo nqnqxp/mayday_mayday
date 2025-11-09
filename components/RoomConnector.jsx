@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Realtime } from 'ably'
 
 const STATUS_LABEL = {
   idle: 'Not connected',
@@ -10,11 +11,7 @@ const STATUS_LABEL = {
   error: 'Error - check console',
 }
 
-const defaultWsPath = process.env.NODE_ENV === 'development' ? '/api/ws' : '/api/connect'
-const defaultWarmupPath = process.env.NODE_ENV === 'development' ? '/api/ws' : '/api/connect'
-
-const WS_PATH = process.env.NEXT_PUBLIC_WS_PATH ?? defaultWsPath
-const WARMUP_PATH = process.env.NEXT_PUBLIC_WS_WARMUP ?? defaultWarmupPath
+const ABLY_KEY = process.env.NEXT_PUBLIC_ABLY_KEY ?? ''
 
 const createId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -23,52 +20,15 @@ const createId = () => {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
-const buildWebSocketUrl = (roomCode) => {
-  const target = WS_PATH.trim()
-  if (!target) {
-    throw new Error('WebSocket path is not configured')
-  }
-
-  const separator = target.includes('?') ? '&' : '?'
-
-  if (target.startsWith('ws://') || target.startsWith('wss://')) {
-    return `${target}${separator}code=${encodeURIComponent(roomCode)}`
-  }
-
-  if (typeof window === 'undefined') {
-    return `${target}${separator}code=${encodeURIComponent(roomCode)}`
-  }
-
-  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  const host = window.location.host
-  const normalizedPath = target.startsWith('/') ? target : `/${target}`
-  return `${protocol}://${host}${normalizedPath}${separator}code=${encodeURIComponent(roomCode)}`
-}
-
-async function warmUpWebSocketEndpoint() {
-  if (!WARMUP_PATH) {
-    return
-  }
-  try {
-    const separator = WARMUP_PATH.includes('?') ? '&' : '?'
-    const url = `${WARMUP_PATH}${separator}code=__warmup__`
-    await fetch(url, { method: 'GET', cache: 'no-store' })
-  } catch (error) {
-    console.warn('Failed to warm up websocket endpoint', error)
-  }
-}
-
 export default function RoomConnector({ pageId }) {
   const [code, setCode] = useState('')
   const [status, setStatus] = useState('idle')
   const [logs, setLogs] = useState([])
   const [creating, setCreating] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
-  const wsRef = useRef(null)
-
-  useEffect(() => {
-    warmUpWebSocketEndpoint()
-  }, [])
+  const realtimeRef = useRef(null)
+  const channelRef = useRef(null)
+  const actorIdRef = useRef(createId())
 
   useEffect(() => {
     if (status === 'connected') {
@@ -85,16 +45,82 @@ export default function RoomConnector({ pageId }) {
     })
   }
 
-  const closeExistingSocket = () => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.close(1000, 'User requested disconnect')
+  const ensureRealtime = () => {
+    if (!ABLY_KEY) {
+      throw new Error('Ably key is not configured – set NEXT_PUBLIC_ABLY_KEY')
+    }
+
+    if (!realtimeRef.current) {
+      const client = new Realtime({
+        key: ABLY_KEY,
+        clientId: actorIdRef.current,
+        echoMessages: false,
+        transports: ['web_socket'],
+      })
+
+      client.connection.on('failed', (event) => {
+        console.error('Ably connection failed', event)
+        setStatus('error')
+        appendLog('Realtime connection failed – check console')
+      })
+
+      realtimeRef.current = client
+    }
+
+    return realtimeRef.current
+  }
+
+  const teardownChannel = async ({ logMessage, resetStatus = true } = {}) => {
+    const channel = channelRef.current
+    if (!channel) {
+      if (resetStatus) {
+        setStatus('idle')
+      }
+      if (logMessage) {
+        appendLog(logMessage)
+      }
+      return
+    }
+
+    channelRef.current = null
+
+    try {
+      channel.unsubscribe()
+      channel.presence.unsubscribe()
+      channel.off()
+    } catch (error) {
+      console.warn('Failed to unsubscribe from Ably channel', error)
+    }
+
+    try {
+      await channel.presence.leave({ actorId: actorIdRef.current })
+    } catch (error) {
+      if (error?.code !== 91000) {
+        console.warn('Failed to leave Ably presence', error)
+      }
+    }
+
+    try {
+      await channel.detach()
+    } catch (error) {
+      if (error?.code !== 90001) {
+        console.warn('Failed to detach Ably channel', error)
+      }
+    }
+
+    if (resetStatus) {
+      setStatus('idle')
+      setCollapsed(false)
+    }
+
+    if (logMessage) {
+      appendLog(logMessage)
     }
   }
 
   const handleCreateRoom = async () => {
     setCreating(true)
-    closeExistingSocket()
-    setStatus('idle')
+    await teardownChannel({ resetStatus: true })
 
     try {
       const response = await fetch('/api/rooms', {
@@ -124,7 +150,7 @@ export default function RoomConnector({ pageId }) {
     }
   }
 
-  const handleConnect = () => {
+  const handleConnect = async () => {
     const trimmed = code.trim()
     if (!trimmed) {
       appendLog('Enter a room code to connect')
@@ -132,106 +158,151 @@ export default function RoomConnector({ pageId }) {
       return
     }
 
-    closeExistingSocket()
+    const normalized = trimmed.toUpperCase()
+    await teardownChannel({ resetStatus: false })
 
     setStatus('connecting')
-    appendLog(`Connecting to room “${trimmed.toUpperCase()}”…`)
+    setCollapsed(false)
+    appendLog(`Connecting to room “${normalized}”…`)
 
-    let wsUrl
     try {
-      wsUrl = buildWebSocketUrl(trimmed)
-    } catch (error) {
-      console.error('Unable to build WebSocket URL', error)
-      appendLog('Failed to determine WebSocket endpoint. Check configuration.')
-      setStatus('error')
-      return
-    }
+      const client = ensureRealtime()
+      const channelName = `rooms:${normalized}`
+      const channel = client.channels.get(channelName)
+      channelRef.current = channel
 
-    const ws = new WebSocket(wsUrl)
-    wsRef.current = ws
+      channel.unsubscribe()
+      channel.presence.unsubscribe()
+      channel.off()
 
-    ws.onopen = () => {
+      channel.on((stateChange) => {
+        if (stateChange.current === 'failed') {
+          console.error('Ably channel failed', stateChange)
+          setStatus('error')
+          appendLog('Realtime channel failed – check console')
+        } else if (stateChange.current === 'suspended') {
+          appendLog('Connection issues detected – retrying…')
+          setStatus('connecting')
+        } else if (stateChange.current === 'detached') {
+          if (stateChange.reason) {
+            appendLog('Channel detached – attempting to reconnect')
+            setStatus('connecting')
+          }
+        }
+      })
+
+      channel.subscribe('relay', (message) => {
+        const payload = message?.data
+        if (!payload) {
+          appendLog('Received empty message')
+          return
+        }
+
+        if (payload.actorId === actorIdRef.current) {
+          return
+        }
+
+        if (payload.type === 'presence') {
+          appendLog(`Presence signal from ${payload.page ?? 'partner'}`)
+        } else if (payload.type === 'chat') {
+          appendLog(`${payload.page ?? 'Partner'}: ${payload.message}`)
+        } else {
+          appendLog(`Message: ${JSON.stringify(payload)}`)
+        }
+      })
+
+      channel.presence.subscribe(['enter', 'leave'], async (presenceMsg) => {
+        const data = presenceMsg?.data || {}
+        if (data.actorId === actorIdRef.current) {
+          return
+        }
+
+        let message =
+          presenceMsg.action === 'enter'
+            ? 'Another participant joined the room'
+            : 'A participant left the room'
+
+        try {
+          const members = await channel.presence.get()
+          if (Array.isArray(members) && members.length > 0) {
+            message += ` (now ${members.length})`
+          }
+        } catch (error) {
+          console.warn('Unable to fetch presence member count', error)
+        }
+
+        appendLog(message)
+      })
+
+      await channel.attach()
+
       setStatus('connected')
       appendLog('Connected. Waiting for partner…')
-      ws.send(
-        JSON.stringify({
-          type: 'presence',
-          page: pageId,
-          timestamp: Date.now(),
-        })
-      )
-    }
 
-    ws.onmessage = (event) => {
-      try {
-        const parsed = JSON.parse(event.data)
-        if (parsed.type === 'system') {
-          appendLog(parsed.message)
-        } else if (parsed.type === 'relay') {
-          try {
-            const inner = JSON.parse(parsed.payload)
-            if (inner.type === 'presence') {
-              appendLog(`Presence signal from ${inner.page}`)
-            } else if (inner.type === 'chat') {
-              appendLog(`${inner.page}: ${inner.message}`)
-            } else {
-              appendLog(`Received message: ${parsed.payload}`)
-            }
-          } catch (parseError) {
-            appendLog(`Received: ${parsed.payload}`)
-          }
-        } else {
-          appendLog(`Message: ${event.data}`)
-        }
-      } catch (error) {
-        appendLog(`Raw message: ${event.data}`)
-      }
-    }
-
-    ws.onclose = () => {
-      if (status !== 'idle') {
-        setStatus('closed')
-        setCollapsed(false)
-        appendLog('Connection closed')
-      }
-    }
-
-    ws.onerror = () => {
-      setStatus('error')
-      setCollapsed(false)
-      appendLog('WebSocket error – check console for details')
-    }
-  }
-
-  const handleDisconnect = () => {
-    closeExistingSocket()
-    setStatus('idle')
-    setCollapsed(false)
-    appendLog('Disconnected')
-  }
-
-  const handleSendPing = () => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      appendLog('Not connected')
-      return
-    }
-    wsRef.current.send(
-      JSON.stringify({
-        type: 'presence',
+      await channel.presence.enter({
+        actorId: actorIdRef.current,
         page: pageId,
         timestamp: Date.now(),
       })
-    )
-    appendLog('Presence signal sent')
+
+      await channel.publish('relay', {
+        type: 'presence',
+        page: pageId,
+        actorId: actorIdRef.current,
+        timestamp: Date.now(),
+        note: 'joined',
+      })
+    } catch (error) {
+      console.error('Failed to connect via Ably', error)
+      appendLog('Failed to establish realtime connection – check console for details')
+      setStatus('error')
+      await teardownChannel({ resetStatus: false })
+    }
+  }
+
+  const handleDisconnect = async () => {
+    await teardownChannel({ logMessage: 'Disconnected' })
+  }
+
+  const handleSendPing = async () => {
+    const channel = channelRef.current
+    if (!channel) {
+      appendLog('Not connected')
+      return
+    }
+
+    try {
+      await channel.publish('relay', {
+        type: 'presence',
+        page: pageId,
+        actorId: actorIdRef.current,
+        timestamp: Date.now(),
+        note: 'ping',
+      })
+      appendLog('Presence signal sent')
+    } catch (error) {
+      console.error('Failed to send presence signal', error)
+      appendLog('Failed to send presence signal – check console for details')
+    }
   }
 
   const statusLabel = useMemo(() => STATUS_LABEL[status] ?? status, [status])
 
   useEffect(() => {
     return () => {
-      if (wsRef.current) {
-        wsRef.current.close(1000, 'Component unmounted')
+      const cleanup = async () => {
+        await teardownChannel({ resetStatus: false })
+        if (realtimeRef.current) {
+          try {
+            realtimeRef.current.connection.close()
+          } catch (error) {
+            console.warn('Failed to close Ably connection', error)
+          }
+          realtimeRef.current = null
+        }
       }
+
+      cleanup()
     }
   }, [])
 

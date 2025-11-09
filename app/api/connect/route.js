@@ -28,22 +28,21 @@ export async function GET(request) {
 
   const code = rawCode.trim().toUpperCase()
 
-  if (!upgradeHeader || !upgradeHeader.toLowerCase().includes('websocket')) {
+  let upgraded
+  try {
+    upgraded = Deno.upgradeWebSocket(request)
+  } catch (error) {
+    console.log('[connect] upgrade not attempted', {
+      reason: error?.message ?? String(error),
+      upgrade: upgradeHeader,
+    })
     return new Response(JSON.stringify({ ok: true, message: 'Ready to accept WebSocket upgrade' }), {
       status: 200,
       headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
     })
   }
 
-  if (typeof Deno === 'undefined' || !Deno.upgradeWebSocket) {
-    console.error('[connect] upgrade attempted but Deno.upgradeWebSocket is unavailable')
-    return new Response(JSON.stringify({ error: 'WebSocket upgrades are not supported in this environment' }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    })
-  }
-
-  const { socket, response } = Deno.upgradeWebSocket(request)
+  const { socket, response } = upgraded
 
   const room = ensureRoom(code)
   const { clients } = room
