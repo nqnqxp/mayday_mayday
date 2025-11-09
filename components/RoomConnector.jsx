@@ -11,8 +11,6 @@ const STATUS_LABEL = {
   error: 'Error - check console',
 }
 
-const ABLY_KEY = process.env.NEXT_PUBLIC_ABLY_KEY ?? ''
-
 const createId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID()
@@ -46,14 +44,9 @@ export default function RoomConnector({ pageId }) {
   }
 
   const ensureRealtime = () => {
-    if (!ABLY_KEY) {
-      throw new Error('Ably key is not configured – set NEXT_PUBLIC_ABLY_KEY')
-    }
-
     if (!realtimeRef.current) {
       const client = new Realtime({
-        key: ABLY_KEY,
-        clientId: actorIdRef.current,
+        authUrl: `/api/ably-token?clientId=${encodeURIComponent(actorIdRef.current)}`,
         echoMessages: false,
         transports: ['web_socket'],
       })
