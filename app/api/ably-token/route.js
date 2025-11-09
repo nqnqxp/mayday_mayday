@@ -1,4 +1,7 @@
-import Ably from 'ably'
+import { createRequire } from 'module'
+
+const require = createRequire(import.meta.url)
+const { Rest } = require('ably')
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -14,8 +17,7 @@ const getRestClient = (() => {
     if (!key) {
       return null
     }
-    const AblySdk = Ably?.Rest ? Ably : Ably?.default ?? Ably
-    client = new AblySdk.Rest({ key })
+    client = new Rest(key)
     return client
   }
 })()
