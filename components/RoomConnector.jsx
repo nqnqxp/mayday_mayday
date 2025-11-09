@@ -350,6 +350,7 @@ export default function RoomConnector({ pageId }) {
 
   const statusLabel = useMemo(() => STATUS_LABEL[status] ?? status, [status])
   const hasPressedStart = useMemo(() => startSignals.includes(actorIdRef.current), [startSignals])
+  const hasStarted = startSignals.length >= MAX_PARTICIPANTS
   const canStart = useMemo(() => {
     if (participants.length !== MAX_PARTICIPANTS) {
       return false
@@ -512,7 +513,7 @@ export default function RoomConnector({ pageId }) {
 
   const latestLog = logs[logs.length - 1]
 
-  const startButton = canStart ? (
+  const startButton = !hasStarted && canStart ? (
     <button
       onClick={handleStart}
       disabled={hasPressedStart}
@@ -539,6 +540,10 @@ export default function RoomConnector({ pageId }) {
       Start
     </button>
   ) : null
+
+  if (hasStarted) {
+    return null
+  }
 
   if (collapsed) {
     return (
