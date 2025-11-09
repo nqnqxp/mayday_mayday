@@ -10,6 +10,9 @@ const STATUS_LABEL = {
   error: 'Error - check console',
 }
 
+const WS_PATH = process.env.NEXT_PUBLIC_WS_PATH ?? '/api/connect'
+const WARMUP_PATH = process.env.NEXT_PUBLIC_WS_WARMUP ?? '/api/connect'
+
 const createId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID()
@@ -17,9 +20,36 @@ const createId = () => {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`
 }
 
+const buildWebSocketUrl = (roomCode) => {
+  const target = WS_PATH.trim()
+  if (!target) {
+    throw new Error('WebSocket path is not configured')
+  }
+
+  const separator = target.includes('?') ? '&' : '?'
+
+  if (target.startsWith('ws://') || target.startsWith('wss://')) {
+    return `${target}${separator}code=${encodeURIComponent(roomCode)}`
+  }
+
+  if (typeof window === 'undefined') {
+    return `${target}${separator}code=${encodeURIComponent(roomCode)}`
+  }
+
+  const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+  const host = window.location.host
+  const normalizedPath = target.startsWith('/') ? target : `/${target}`
+  return `${protocol}://${host}${normalizedPath}${separator}code=${encodeURIComponent(roomCode)}`
+}
+
 async function warmUpWebSocketEndpoint() {
+  if (!WARMUP_PATH) {
+    return
+  }
   try {
-    await fetch('/api/connect', { method: 'GET' })
+    const separator = WARMUP_PATH.includes('?') ? '&' : '?'
+    const url = `${WARMUP_PATH}${separator}code=__warmup__`
+    await fetch(url, { method: 'GET', cache: 'no-store' })
   } catch (error) {
     console.warn('Failed to warm up websocket endpoint', error)
   }
@@ -104,9 +134,17 @@ export default function RoomConnector({ pageId }) {
     setStatus('connecting')
     appendLog(`Connecting to room “${trimmed.toUpperCase()}”…`)
 
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
-    const host = window.location.host
-    const ws = new WebSocket(`${protocol}://${host}/ws?code=${encodeURIComponent(trimmed)}`)
+    let wsUrl
+    try {
+      wsUrl = buildWebSocketUrl(trimmed)
+    } catch (error) {
+      console.error('Unable to build WebSocket URL', error)
+      appendLog('Failed to determine WebSocket endpoint. Check configuration.')
+      setStatus('error')
+      return
+    }
+
+    const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
     ws.onopen = () => {

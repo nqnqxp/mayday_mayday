@@ -24,8 +24,18 @@ npm run dev
 
 - Use the **Room Connector** panel on `/page2` or `/page3` to open a room or join an existing code.
 - Clicking **Open Room** generates (or reserves) a shared code via `POST /api/rooms`.
-- Joining sends both participants through a WebSocket bridge handled by `pages/api/connect` (powered by `ws`).
+- Joining sends both participants through a WebSocket bridge handled by `app/api/connect/route.js` (Edge runtime) or the local development fallback.
 - The client warms up the endpoint automatically, so the first connection succeeds even after a fresh deploy.
+
+### WebSocket configuration
+
+| Scenario | `NEXT_PUBLIC_WS_PATH` | `NEXT_PUBLIC_WS_WARMUP` |
+| --- | --- | --- |
+| Local development (defaults) | `/api/connect` | `/api/connect` |
+| Vercel deployment | `/api/connect` | `/api/connect` |
+| Custom WebSocket service | Full `wss://...` URL | Optional relative URL for warm-up |
+
+Set these values in `.env.local` for local testing and in your Vercel project settings (Environment Variables) for production. If you leave them unset, the defaults above are used.
 
 ## API Proxy
 

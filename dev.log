@@ -90,3 +90,8 @@
  GET /api/connect 200 in 6ms (compile: 5ms, render: 980µs)
  ✓ Compiled in 5ms
  GET / 200 in 291ms (compile: 92ms, render: 199ms)
+ POST /api/rooms 201 in 21ms
+[connect] socket connected { code: 'YS28PZ' }
+   skipping /api/connect (conflict)
+ ⚠ Duplicate page detected. pages/api/connect.js and app/api/connect/route.js resolve to /api/connect
+[?25h
