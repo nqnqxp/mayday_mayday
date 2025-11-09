@@ -1,6 +1,8 @@
 import { ensureRoom, deleteRoom } from '@/lib/roomStore'
 
 export const runtime = 'edge'
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 const WS_OPEN = 1
 
