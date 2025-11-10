@@ -6,6 +6,7 @@ import RoomConnector from '@/components/RoomConnector'
 
 export default function Page2() {
   const [sessionReady, setSessionReady] = useState(false)
+  const [checkedItems, setCheckedItems] = useState({})
 
   return (
     <main
@@ -36,11 +37,11 @@ export default function Page2() {
           }}
         >
           {[
-            { title: 'Head-Up Display', text: 'Runway alignment: —\nSpeed: —\nAltitude: —' },
-            { title: 'Cockpit Warning System', text: 'anti-ice\neng\nhyd\noverhead\ndoors\nair cond' },
-            { title: 'Note 3', text: 'Coordinate runway usage and handoff timing with controller.' },
-            { title: 'Note 4', text: 'Monitor weather radar for turbulence and crosswind changes.' },
-            { title: 'Note 5', text: 'Prepare passenger briefing once landing sequence is confirmed.' },
+            { title: 'Flight Instruments', text: 'Altimeter\nAirspeed Indicator\nHeading Indicator\nAttitude Indicator\nTurn Coordinator\nVertical Speed Indicator', hasCheckboxes: false },
+            { title: 'Cockpit Warning System', text: 'ANTI ICE\nENG\nHYD\nOVERHEAD\nDOORS\nAIR COND', hasCheckboxes: true },
+            { title: 'Engine Instruments', text: 'Tachometers\nTemperature Gauges\nFuel Quantity\nOil Quantity\nEngine pressure gauges', hasCheckboxes: false },
+            { title: 'Navigation Instruments', text: 'Compass\nRadio location Device\nGPS Location Device', hasCheckboxes: false },
+            { title: 'Sensory cues', text: 'Presence of Smoke\nVibration', hasCheckboxes: true },
           ].map((note) => (
             <div
               key={note.title}
@@ -61,14 +62,52 @@ export default function Page2() {
                 style={{
                   fontWeight: 700,
                   letterSpacing: '0.08em',
-                  fontSize: note.title === 'Head-Up Display' || note.title === 'Cockpit Warning System' ? '16px' : '12px',
+                  fontSize: '16px',
                   textTransform: 'uppercase',
-                  opacity: note.title === 'Head-Up Display' || note.title === 'Cockpit Warning System' ? 1 : 0.85,
+                  opacity: 1,
                 }}
               >
                 {note.title}
               </span>
-              <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.5, whiteSpace: 'pre-line' }}>{note.text}</p>
+              {note.hasCheckboxes ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {note.text.split('\n').map((item, index) => {
+                    const itemKey = `${note.title}-${index}`
+                    const isChecked = checkedItems[itemKey] || false
+                    return (
+                      <label
+                        key={index}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          fontSize: '13px',
+                          lineHeight: 1.5,
+                          cursor: 'default',
+                          userSelect: 'none',
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          disabled
+                          readOnly
+                          style={{
+                            width: '16px',
+                            height: '16px',
+                            cursor: 'not-allowed',
+                            accentColor: '#60a5fa',
+                            opacity: 0.7,
+                          }}
+                        />
+                        <span style={{ flex: 1 }}>{item}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.5, whiteSpace: 'pre-line' }}>{note.text}</p>
+              )}
             </div>
           ))}
         </header>
