@@ -1,3 +1,5 @@
+'use client'
+
 import Scene from '@/components/Scene'
 import RoomConnector from '@/components/RoomConnector'
 
@@ -6,19 +8,21 @@ export default function Page3() {
     <main style={{ margin: 0, padding: 0, width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative' }}>
       <RoomConnector pageId="Page 3" />
       <Scene>
-        {/* Add your Three.js content for page 3 here */}
+        {/* The controller page does not render the cockpit visuals */}
       </Scene>
-      <div style={{
-        position: 'absolute',
-        top: 20,
-        left: 20,
-        zIndex: 1000,
-        color: '#000',
-        fontSize: '24px',
-        fontWeight: 600,
-        textTransform: 'uppercase',
-        letterSpacing: '2px'
-      }}>
+      <div
+        style={{
+          position: 'absolute',
+          top: 20,
+          left: 20,
+          zIndex: 1000,
+          color: '#000',
+          fontSize: '24px',
+          fontWeight: 600,
+          textTransform: 'uppercase',
+          letterSpacing: '2px',
+        }}
+      >
         Air Traffic Controller
       </div>
     </main>

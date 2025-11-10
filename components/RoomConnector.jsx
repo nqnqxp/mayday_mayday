@@ -45,7 +45,7 @@ const displayNameForPage = (value) => {
   return value ?? 'Unknown'
 }
 
-export default function RoomConnector({ pageId }) {
+export default function RoomConnector({ pageId, onSessionReady }) {
   const [code, setCode] = useState('')
   const [status, setStatus] = useState('idle')
   const [logs, setLogs] = useState([])
@@ -57,6 +57,7 @@ export default function RoomConnector({ pageId }) {
   const channelRef = useRef(null)
   const actorIdRef = useRef(createId())
   const canonicalPageId = useMemo(() => normalizePageId(pageId), [pageId])
+  const readyNotifiedRef = useRef(false)
 
   useEffect(() => {
     if (status === 'connected') {
@@ -139,6 +140,7 @@ export default function RoomConnector({ pageId }) {
 
     setParticipants([])
     setStartSignals([])
+    readyNotifiedRef.current = false
 
     if (logMessage) {
       appendLog(logMessage)
@@ -351,6 +353,34 @@ export default function RoomConnector({ pageId }) {
   const statusLabel = useMemo(() => STATUS_LABEL[status] ?? status, [status])
   const hasPressedStart = useMemo(() => startSignals.includes(actorIdRef.current), [startSignals])
   const hasStarted = startSignals.length >= MAX_PARTICIPANTS
+
+  useEffect(() => {
+    if (typeof onSessionReady !== 'function') {
+      return
+    }
+
+    const payload = {
+      started: hasStarted,
+      roomCode: code.trim().toUpperCase(),
+      participants,
+    }
+
+    if (hasStarted && !readyNotifiedRef.current) {
+      readyNotifiedRef.current = true
+      try {
+        onSessionReady(payload)
+      } catch (callbackError) {
+        console.error('onSessionReady callback failed', callbackError)
+      }
+    } else if (!hasStarted && readyNotifiedRef.current) {
+      readyNotifiedRef.current = false
+      try {
+        onSessionReady(payload)
+      } catch (callbackError) {
+        console.error('onSessionReady callback failed', callbackError)
+      }
+    }
+  }, [hasStarted, onSessionReady, code, participants, startSignals.length])
   const canStart = useMemo(() => {
     if (participants.length !== MAX_PARTICIPANTS) {
       return false

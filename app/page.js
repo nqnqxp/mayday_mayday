@@ -1,12 +1,19 @@
+'use client'
+
 import Scene from '@/components/Scene'
-import Box from '@/components/Box'
+import Boeing from '@/components/Boeing'
 import Link from 'next/link'
 
 export default function Home() {
   return (
     <main style={{ margin: 0, padding: 0, width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative' }}>
-      <Scene>
-        <Box position={[0, 0, 0]} color="orange" />
+      <Scene
+        cameraProps={{
+          position: [0, 1, 8],
+          fov: 50,
+        }}
+      >
+        <Boeing position={[0, 0.5, 0]} />
       </Scene>
       <div style={{
         position: 'absolute',
