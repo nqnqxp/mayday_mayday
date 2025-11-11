@@ -3,10 +3,12 @@
 import { useState } from 'react'
 import Scene from '@/components/Scene'
 import RoomConnector from '@/components/RoomConnector'
+import ChatConnection from '@/components/ChatConnection'
 
 export default function Page2() {
   const [sessionReady, setSessionReady] = useState(false)
   const [checkedItems, setCheckedItems] = useState({})
+  const [roomCode, setRoomCode] = useState('')
 
   return (
     <main
@@ -116,8 +118,14 @@ export default function Page2() {
       <div style={{ flex: 1, position: 'relative' }}>
         <RoomConnector
           pageId="Page 2"
-          onSessionReady={(state) => setSessionReady(Boolean(state?.started))}
+          onSessionReady={(state) => {
+            setSessionReady(Boolean(state?.started))
+            if (state?.roomCode) {
+              setRoomCode(state.roomCode)
+            }
+          }}
         />
+              {sessionReady && roomCode && <ChatConnection roomCode={roomCode} pageId="Page 2" position="bottom-right" />}
         <Scene
           cameraProps={{
             position: [0, 0.85, 2.1],

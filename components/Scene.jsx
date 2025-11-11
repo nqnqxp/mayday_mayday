@@ -6,7 +6,7 @@ import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 export default function Scene({ children, cameraProps, controlsProps }) {
   return (
     <Canvas
-      style={{ width: '100%', height: '100vh' }}
+      style={{ width: '100%', height: '100vh', pointerEvents: 'none' }}
       gl={{ antialias: true, alpha: true }}
     >
       <PerspectiveCamera
