@@ -109,7 +109,9 @@ export default function Chat({ roomCode, pageId, position = 'bottom-right', onCo
 
           client.connection.on('connected', () => {
             if (isMounted) {
+              console.log(`[Chat ${pageId}] Connection established`)
               setIsConnected(true)
+              setChatConnected(true)
               if (onConnectionChangeRef.current) {
                 onConnectionChangeRef.current(true)
               }
@@ -118,7 +120,31 @@ export default function Chat({ roomCode, pageId, position = 'bottom-right', onCo
 
           client.connection.on('disconnected', () => {
             if (isMounted) {
+              console.log(`[Chat ${pageId}] Connection lost`)
               setIsConnected(false)
+              setChatConnected(false)
+              if (onConnectionChangeRef.current) {
+                onConnectionChangeRef.current(false)
+              }
+            }
+          })
+
+          client.connection.on('failed', (error) => {
+            if (isMounted) {
+              console.error(`[Chat ${pageId}] Connection failed:`, error)
+              setIsConnected(false)
+              setChatConnected(false)
+              if (onConnectionChangeRef.current) {
+                onConnectionChangeRef.current(false)
+              }
+            }
+          })
+
+          client.connection.on('suspended', () => {
+            if (isMounted) {
+              console.warn(`[Chat ${pageId}] Connection suspended`)
+              setIsConnected(false)
+              setChatConnected(false)
               if (onConnectionChangeRef.current) {
                 onConnectionChangeRef.current(false)
               }
@@ -199,10 +225,28 @@ export default function Chat({ roomCode, pageId, position = 'bottom-right', onCo
         }
         
         // Report initial connection status
-        if (isMounted && onConnectionChangeRef.current) {
+        if (isMounted) {
           const connected = client.connection.state === 'connected'
+          console.log(`[Chat ${pageId}] Initial connection state:`, client.connection.state)
+          setIsConnected(connected)
           setChatConnected(connected)
-          onConnectionChangeRef.current(connected)
+          if (onConnectionChangeRef.current) {
+            onConnectionChangeRef.current(connected)
+          }
+          
+          // If not connected, wait for connection
+          if (!connected) {
+            client.connection.once('connected', () => {
+              if (isMounted) {
+                console.log(`[Chat ${pageId}] Connection established after wait`)
+                setIsConnected(true)
+                setChatConnected(true)
+                if (onConnectionChangeRef.current) {
+                  onConnectionChangeRef.current(true)
+                }
+              }
+            })
+          }
         }
       } catch (error) {
         if (isMounted) {
@@ -299,6 +343,17 @@ export default function Chat({ roomCode, pageId, position = 'bottom-right', onCo
             }
           }
         })
+        
+        // Ensure channel is attached before subscribing
+        if (sharedChannel.state !== 'attached' && sharedChannel.state !== 'attaching') {
+          console.log(`[Chat ${pageId}] Attaching shared channel, current state:`, sharedChannel.state)
+          try {
+            await sharedChannel.attach()
+            console.log(`[Chat ${pageId}] Shared channel attached, state:`, sharedChannel.state)
+          } catch (err) {
+            console.error(`[Chat ${pageId}] Failed to attach shared channel:`, err)
+          }
+        }
         
         // Subscribe to chat messages on the shared channel
         const channel = sharedChannel
@@ -509,7 +564,13 @@ export default function Chat({ roomCode, pageId, position = 'bottom-right', onCo
     if (autoConnect && roomCode && roomCode.trim()) {
       // If using shared client/channel, connect immediately
       if (sharedClient && sharedChannel) {
-        console.log(`[Chat ${pageId}] Auto-connect with shared resources`)
+        console.log(`[Chat ${pageId}] Auto-connect with shared resources, client state:`, sharedClient.connection.state)
+        // Ensure channel is attached
+        if (sharedChannel.state !== 'attached' && sharedChannel.state !== 'attaching') {
+          sharedChannel.attach().catch((err) => {
+            console.error(`[Chat ${pageId}] Failed to attach shared channel:`, err)
+          })
+        }
         connectChat()
       } else if (!chatConnected) {
         // Add a delay to ensure ChatConnection cleanup is complete

@@ -58,6 +58,22 @@ export default function ChatConnection({ roomCode, pageId, position = 'bottom-ri
             transports: ['web_socket'],
           })
 
+          client.connection.on('connected', () => {
+            console.log(`[${pageId}] ChatConnection: Ably client connected`)
+          })
+
+          client.connection.on('disconnected', () => {
+            console.log(`[${pageId}] ChatConnection: Ably client disconnected`)
+          })
+
+          client.connection.on('failed', (error) => {
+            console.error(`[${pageId}] ChatConnection: Ably connection failed:`, error)
+          })
+
+          client.connection.on('suspended', () => {
+            console.warn(`[${pageId}] ChatConnection: Ably connection suspended`)
+          })
+
           realtimeRef.current = client
         }
 
