@@ -9,6 +9,8 @@ export default function Page3() {
   const [sessionReady, setSessionReady] = useState(false)
   const [roomCode, setRoomCode] = useState('')
   const [chatConnected, setChatConnected] = useState(false)
+  const [note5Heading, setNote5Heading] = useState('')
+  const [note5Description, setNote5Description] = useState('')
 
   return (
     <main
@@ -41,13 +43,13 @@ export default function Page3() {
             zIndex: 100,
           }}
         >
-          {[
-            { title: 'Radars', text: 'Primary Surveillance Radar\nSecondary Surveillance Radar' },
-            { title: 'Communication Systems', isChat: true },
-            { title: 'Navigation Aids', text: 'VOR\nILS\nGPS' },
-            { title: 'Surveillance Systems', text: 'ADS-B (Satellite Data)' },
-            { title: 'Software Platforms', text: 'Flight Planning\nConflict Detection\nWeather Monitor' },
-          ].map((note, index) => (
+                 {[
+                   { title: 'Radars', text: 'Primary Surveillance Radar\nSecondary Surveillance Radar' },
+                   { title: 'Communication Systems', isChat: true },
+                   { title: 'Navigation Aids', text: 'VOR\nILS\nGPS' },
+                   { title: 'Emergency protocols', text: 'ANTI ICE\nENG\nHYD\nOVERHEAD\nDOORS\nAIR COND', isClickable: true },
+                   { title: note5Heading, text: note5Description },
+                 ].map((note, index) => (
             <div
               key={note.title}
               style={{
@@ -131,23 +133,75 @@ export default function Page3() {
                     </div>
                   )}
                 </>
-              ) : (
-                <>
-                  <span
-                    style={{
-                      fontWeight: 700,
-                      letterSpacing: '0.08em',
-                      fontSize: '16px',
-                      textTransform: 'uppercase',
-                      opacity: 1,
-                      margin: 0,
-                    }}
-                  >
-                    {note.title}
-                  </span>
-                  <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.5, whiteSpace: 'pre-line' }}>{note.text}</p>
-                </>
-              )}
+                     ) : note.isClickable ? (
+                       <>
+                         <span
+                           style={{
+                             fontWeight: 700,
+                             letterSpacing: '0.08em',
+                             fontSize: '16px',
+                             textTransform: 'uppercase',
+                             opacity: 1,
+                             margin: 0,
+                           }}
+                         >
+                           {note.title}
+                         </span>
+                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                           {note.text.split('\n').map((item, itemIndex) => (
+                             <span
+                               key={itemIndex}
+                               onClick={() => {
+                                 setNote5Heading(item)
+                                 // Set description based on clicked item
+                                 if (item === 'ENG') {
+                                   setNote5Description('In the event of smoke, check which one is affected, and shut down the affected engine\n\nIn the event of vibration, check which one is affected, and restart the affected engine')
+                                 } else {
+                                   setNote5Description('')
+                                 }
+                               }}
+                               style={{
+                                 margin: 0,
+                                 fontSize: '13px',
+                                 lineHeight: 1.5,
+                                 cursor: 'pointer',
+                                 padding: '4px 8px',
+                                 borderRadius: '4px',
+                                 transition: 'background-color 0.2s',
+                               }}
+                               onMouseEnter={(e) => {
+                                 e.target.style.backgroundColor = 'rgba(148, 163, 184, 0.2)'
+                               }}
+                               onMouseLeave={(e) => {
+                                 e.target.style.backgroundColor = 'transparent'
+                               }}
+                             >
+                               {item}
+                             </span>
+                           ))}
+                         </div>
+                       </>
+                     ) : (
+                       <>
+                         {note.title && (
+                           <span
+                             style={{
+                               fontWeight: 700,
+                               letterSpacing: '0.08em',
+                               fontSize: '16px',
+                               textTransform: 'uppercase',
+                               opacity: 1,
+                               margin: 0,
+                             }}
+                           >
+                             {note.title}
+                           </span>
+                         )}
+                         {note.text && (
+                           <p style={{ margin: 0, fontSize: '13px', lineHeight: 1.5, whiteSpace: 'pre-line' }}>{note.text}</p>
+                         )}
+                       </>
+                     )}
             </div>
           ))}
         </header>
