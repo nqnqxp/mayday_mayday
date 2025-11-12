@@ -16,9 +16,11 @@
     "@react-three/drei": "^10.7.6",
     "@react-three/fiber": "^9.4.0",
     "ably": "^2.14.0",
+    "leaflet": "^1.9.4",
     "next": "^16.0.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-leaflet": "^5.0.0",
     "three": "^0.181.0",
     "ws": "^8.18.3"
   }

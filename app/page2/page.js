@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import Scene from '@/components/Scene'
 import RoomConnector from '@/components/RoomConnector'
 import ChatConnection from '@/components/ChatConnection'
+import USMap from '@/components/USMap'
+import { Realtime } from 'ably'
 
 export default function Page2() {
   const [sessionReady, setSessionReady] = useState(false)
@@ -17,8 +19,248 @@ export default function Page2() {
   const [originalSmokeAffected, setOriginalSmokeAffected] = useState([]) // Store original smoke affected engines
   const [originalVibrationAffected, setOriginalVibrationAffected] = useState([]) // Store original vibration affected engines
   const [hasEverHadSmoke, setHasEverHadSmoke] = useState(false) // Track if smoke was ever applied to any engine
+  const [hasEverHadEffects, setHasEverHadEffects] = useState(false) // Track if any effects (smoke or vibration) were ever applied
+  const [latitude, setLatitude] = useState(null) // Current latitude
+  const [longitude, setLongitude] = useState(null) // Current longitude
+  const [heading, setHeading] = useState(null) // Current heading in degrees (0-360)
+  const [speed, setSpeed] = useState(null) // Speed in knots
+  const [flightId, setFlightId] = useState('') // Flight ID number
+  const [flightPath, setFlightPath] = useState([]) // Flight path history
+  const flightDataClientRef = useRef(null)
+  const flightDataChannelRef = useRef(null)
   const smokeAffectedEnginesRef = useRef(smokeAffectedEngines)
   const vibrationAffectedEnginesRef = useRef(vibrationAffectedEngines)
+  const hasEverHadEffectsRef = useRef(hasEverHadEffects)
+  const coordinateIntervalRef = useRef(null)
+  const latitudeRef = useRef(null)
+  const longitudeRef = useRef(null)
+  const headingRef = useRef(null)
+  const speedRef = useRef(null)
+
+  // Format coordinates for display
+  const formatCoordinates = (lat, lon) => {
+    const latDir = lat >= 0 ? 'N' : 'S'
+    const lonDir = lon >= 0 ? 'E' : 'W'
+    const latAbs = Math.abs(lat)
+    const lonAbs = Math.abs(lon)
+    
+    // Convert to degrees, minutes, seconds
+    const latDeg = Math.floor(latAbs)
+    const latMin = Math.floor((latAbs - latDeg) * 60)
+    const latSec = ((latAbs - latDeg - latMin / 60) * 3600).toFixed(2)
+    
+    const lonDeg = Math.floor(lonAbs)
+    const lonMin = Math.floor((lonAbs - lonDeg) * 60)
+    const lonSec = ((lonAbs - lonDeg - lonMin / 60) * 3600).toFixed(2)
+    
+    return `${latDeg}°${latMin}'${latSec}" ${latDir}, ${lonDeg}°${lonMin}'${lonSec}" ${lonDir}`
+  }
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    latitudeRef.current = latitude
+  }, [latitude])
+
+  useEffect(() => {
+    longitudeRef.current = longitude
+  }, [longitude])
+
+  useEffect(() => {
+    headingRef.current = heading
+  }, [heading])
+
+  useEffect(() => {
+    speedRef.current = speed
+  }, [speed])
+
+  // Generate flight ID
+  const generateFlightId = () => {
+    // Common airline codes (2-3 letters)
+    const airlineCodes = ['AA', 'UA', 'DL', 'WN', 'AS', 'B6', 'NK', 'F9', 'SY', 'G4']
+    const airline = airlineCodes[Math.floor(Math.random() * airlineCodes.length)]
+    // Flight number: 1000-9999
+    const flightNumber = Math.floor(1000 + Math.random() * 9000)
+    return `${airline}${flightNumber}`
+  }
+
+  // Initialize coordinates and flight ID when session starts
+  useEffect(() => {
+    if (sessionReady && latitude === null) {
+      // Generate random flight ID
+      const newFlightId = generateFlightId()
+      setFlightId(newFlightId)
+      
+      // Generate random starting coordinates within the continental US
+      // Latitude: 24.396308 to 49.384358 (continental US)
+      // Longitude: -125.0 to -66.93457 (continental US)
+      const startLat = 24.396308 + Math.random() * (49.384358 - 24.396308)
+      const startLon = -125.0 + Math.random() * (-66.93457 - (-125.0))
+      
+      // Generate random heading (0-360 degrees)
+      const randomHeading = Math.random() * 360
+      
+      // Generate random speed (450-500 knots, typical cruise speed for commercial jets)
+      const randomSpeed = 450 + Math.random() * 50
+      
+      setLatitude(startLat)
+      setLongitude(startLon)
+      setHeading(randomHeading)
+      setSpeed(randomSpeed)
+      
+      // Initialize flight path with starting position
+      setFlightPath([{ lat: startLat, lon: startLon, timestamp: Date.now() }])
+    } else if (!sessionReady) {
+      // Reset coordinates and flight ID when session ends
+      setLatitude(null)
+      setLongitude(null)
+      setHeading(null)
+      setSpeed(null)
+      setFlightId('')
+      setFlightPath([])
+      if (coordinateIntervalRef.current) {
+        clearInterval(coordinateIntervalRef.current)
+        coordinateIntervalRef.current = null
+      }
+    }
+  }, [sessionReady, latitude])
+
+  // Update coordinates based on heading and speed
+  useEffect(() => {
+    if (sessionReady && latitude !== null && longitude !== null && heading !== null && speed !== null) {
+      // Update coordinates every second
+      coordinateIntervalRef.current = setInterval(() => {
+        const prevLat = latitudeRef.current
+        const prevLon = longitudeRef.current
+        const currentHeading = headingRef.current
+        const currentSpeed = speedRef.current
+        
+        if (prevLat === null || prevLon === null || currentHeading === null || currentSpeed === null) {
+          return
+        }
+        
+        // Convert heading to radians
+        const headingRad = (currentHeading * Math.PI) / 180
+        
+        // Calculate distance traveled in one second
+        // 1 knot = 1 nautical mile per hour = 1852 meters per hour = 0.514 m/s
+        // 1 degree of latitude ≈ 111 km = 111000 m
+        // 1 degree of longitude ≈ 111 km * cos(latitude) = 111000 * cos(latitude) m
+        const distanceMeters = currentSpeed * 0.514 // meters per second
+        const latAdjustment = Math.cos((prevLat * Math.PI) / 180)
+        
+        // Calculate distance in degrees
+        const distanceLatDegrees = distanceMeters / 111000 // degrees latitude
+        const distanceLonDegrees = distanceMeters / (111000 * latAdjustment) // degrees longitude
+        
+        // Calculate new position using heading
+        // Heading: 0° = North, 90° = East, 180° = South, 270° = West
+        const northComponent = distanceLatDegrees * Math.cos(headingRad)
+        const eastComponent = distanceLonDegrees * Math.sin(headingRad)
+        
+        const newLat = prevLat + northComponent
+        const newLon = prevLon + eastComponent
+        
+        // Keep within reasonable US bounds (with some buffer)
+        const boundedLat = Math.max(24, Math.min(50, newLat))
+        const boundedLon = Math.max(-125, Math.min(-66, newLon))
+        
+        // Update state (refs will be updated by the sync useEffect)
+        setLatitude(boundedLat)
+        setLongitude(boundedLon)
+      }, 1000) // Update every second
+      
+      return () => {
+        if (coordinateIntervalRef.current) {
+          clearInterval(coordinateIntervalRef.current)
+          coordinateIntervalRef.current = null
+        }
+      }
+    }
+  }, [sessionReady, latitude, longitude, heading, speed])
+
+  // Set up Ably channel for flight data broadcasting
+  useEffect(() => {
+    if (!sessionReady || !roomCode || !flightId) return
+
+    let isMounted = true
+
+    const setupFlightDataChannel = async () => {
+      try {
+        if (!flightDataClientRef.current) {
+          const createId = () => {
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+              return crypto.randomUUID()
+            }
+            return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+          }
+
+          const client = new Realtime({
+            authUrl: `/api/ably-token?clientId=${encodeURIComponent(createId())}`,
+            echoMessages: false,
+            transports: ['web_socket'],
+          })
+
+          flightDataClientRef.current = client
+        }
+
+        const client = flightDataClientRef.current
+        const channelName = `rooms:${roomCode.trim().toUpperCase()}:flight-data`
+        const channel = client.channels.get(channelName)
+        flightDataChannelRef.current = channel
+
+        // Attach channel
+        if (channel.state !== 'attached' && channel.state !== 'attaching') {
+          await channel.attach()
+        }
+      } catch (error) {
+        console.error('Failed to set up flight data channel', error)
+      }
+    }
+
+    setupFlightDataChannel()
+
+    return () => {
+      isMounted = false
+      if (flightDataChannelRef.current) {
+        try {
+          flightDataChannelRef.current.detach().catch(() => {})
+        } catch (e) {}
+        flightDataChannelRef.current = null
+      }
+    }
+  }, [sessionReady, roomCode, flightId])
+
+  // Publish flight data when coordinates update - publish every time coordinates change
+  useEffect(() => {
+    if (flightDataChannelRef.current && latitude !== null && longitude !== null && heading !== null && speed !== null && flightId) {
+      const channel = flightDataChannelRef.current
+      
+      // Only publish if channel is attached
+      if (channel.state === 'attached') {
+        // Publish flight data immediately when coordinates change
+        channel.publish('flight-update', {
+          flightId,
+          latitude,
+          longitude,
+          heading,
+          speed,
+          timestamp: Date.now(),
+        }).catch(err => console.error('Failed to publish flight data', err))
+        
+        // Add to flight path (keep last 100 points, add point every 5 seconds to avoid too many points)
+        setFlightPath((prev) => {
+          const now = Date.now()
+          const lastPoint = prev[prev.length - 1]
+          // Only add point if last point is more than 5 seconds old, or if this is the first point
+          if (!lastPoint || (now - lastPoint.timestamp) > 5000) {
+            const newPath = [...prev, { lat: latitude, lon: longitude, timestamp: now }]
+            return newPath.slice(-100) // Keep last 100 points
+          }
+          return prev
+        })
+      }
+    }
+  }, [latitude, longitude, heading, speed, flightId])
 
   // Start countdown when session becomes ready
   useEffect(() => {
@@ -69,6 +311,7 @@ export default function Page2() {
           setSmokeAffectedEngines(affectedEngines)
           setOriginalSmokeAffected(affectedEngines) // Store original state
           setHasEverHadSmoke(true) // Mark that smoke was ever applied
+          setHasEverHadEffects(true) // Mark that effects were ever applied
         }
         
         // Check if vibration is checked and randomly affect engines
@@ -83,6 +326,7 @@ export default function Page2() {
           }
           setVibrationAffectedEngines(affectedEngines)
           setOriginalVibrationAffected(affectedEngines) // Store original state
+          setHasEverHadEffects(true) // Mark that effects were ever applied
         }
         
         setCountdown(null)
@@ -101,6 +345,7 @@ export default function Page2() {
       setOriginalSmokeAffected([])
       setOriginalVibrationAffected([])
       setHasEverHadSmoke(false) // Reset smoke history when session resets
+      setHasEverHadEffects(false) // Reset effects history when session resets
     }
   }, [sessionReady])
 
@@ -112,6 +357,10 @@ export default function Page2() {
   useEffect(() => {
     vibrationAffectedEnginesRef.current = vibrationAffectedEngines
   }, [vibrationAffectedEngines])
+
+  useEffect(() => {
+    hasEverHadEffectsRef.current = hasEverHadEffects
+  }, [hasEverHadEffects])
 
   // Sync note 5 checkboxes (smoke/vibration) with actual engine states
   useEffect(() => {
@@ -160,16 +409,22 @@ export default function Page2() {
     })
   }, [smokeAffectedEngines, vibrationAffectedEngines, hasEverHadSmoke])
 
-  // Randomly select note 5 effects every 3 seconds if ENG is checked but no engines have effects
+  // Randomly select note 5 effects every 3 seconds if ENG is checked but no effects were ever applied
   useEffect(() => {
     const engChecked = checkedItems['Cockpit Warning System-1'] // ENG is at index 1
     const hasSmoke = smokeAffectedEngines.length > 0
     const hasVibration = vibrationAffectedEngines.length > 0
     const hasAnyEffects = hasSmoke || hasVibration
 
-    // If ENG is checked but no engines have effects, randomly select effects every 3 seconds
-    if (engChecked && !hasAnyEffects && sessionReady) {
+    // If ENG is checked but no effects were ever applied, randomly select effects every 3 seconds
+    // Once effects are applied (even if removed later), stop random selection
+    if (engChecked && !hasEverHadEffects && !hasAnyEffects && sessionReady) {
       const interval = setInterval(() => {
+        // Check if effects were ever applied (using ref to get latest value)
+        if (hasEverHadEffectsRef.current) {
+          return // Stop if effects were ever applied
+        }
+        
         // Check current engine states using refs (to get latest values)
         const currentHasSmoke = smokeAffectedEnginesRef.current.length > 0
         const currentHasVibration = vibrationAffectedEnginesRef.current.length > 0
@@ -205,6 +460,7 @@ export default function Page2() {
           setSmokeAffectedEngines(affectedEngines)
           setOriginalSmokeAffected(affectedEngines)
           setHasEverHadSmoke(true) // Mark that smoke was ever applied
+          setHasEverHadEffects(true) // Mark that effects were ever applied
           // Checkboxes will be synced by the sync useEffect
         }
 
@@ -217,13 +473,14 @@ export default function Page2() {
           }
           setVibrationAffectedEngines(affectedEngines)
           setOriginalVibrationAffected(affectedEngines)
+          setHasEverHadEffects(true) // Mark that effects were ever applied
           // Checkboxes will be synced by the sync useEffect
         }
       }, 3000)
 
       return () => clearInterval(interval)
     }
-  }, [checkedItems, smokeAffectedEngines, vibrationAffectedEngines, sessionReady])
+  }, [checkedItems, smokeAffectedEngines, vibrationAffectedEngines, sessionReady, hasEverHadEffects])
 
   return (
     <main
@@ -253,13 +510,19 @@ export default function Page2() {
             boxShadow: '0 12px 30px rgba(148, 163, 184, 0.25)',
           }}
         >
-          {[
-            { title: 'Flight Instruments', text: 'Altimeter\nAirspeed Indicator\nHeading Indicator\nAttitude Indicator\nTurn Coordinator\nVertical Speed Indicator', hasCheckboxes: false },
-            { title: 'Cockpit Warning System', text: 'ANTI ICE\nENG\nHYD\nOVERHEAD\nDOORS\nAIR COND', hasCheckboxes: true },
-            { title: 'Engine Instruments', text: 'Tachometers\nTemperature Gauges\nFuel Quantity\nOil Quantity\nEngine pressure gauges', hasCheckboxes: false },
-            { title: 'Navigation Instruments', text: 'Compass\nRadio location Device\nGPS Location Device', hasCheckboxes: false },
-            { title: 'Sensory cues', text: 'Presence of Smoke\nVibration', hasCheckboxes: true },
-          ].map((note) => (
+                 {[
+                   { title: 'Flight Instruments', text: 'Altimeter\nAirspeed Indicator\nHeading Indicator\nAttitude Indicator\nTurn Coordinator\nVertical Speed Indicator', hasCheckboxes: false },
+                   { title: 'Cockpit Warning System', text: 'ANTI ICE\nENG\nHYD\nOVERHEAD\nDOORS\nAIR COND', hasCheckboxes: true },
+                   { title: 'Engine Instruments', text: 'Tachometers\nTemperature Gauges\nFuel Quantity\nOil Quantity\nEngine pressure gauges', hasCheckboxes: false },
+                   { 
+                     title: 'Navigation Instruments', 
+                     text: latitude !== null && longitude !== null 
+                       ? `Compass\nRadio location Device\nGPS Location Device\n\nPosition: ${formatCoordinates(latitude, longitude)}\nHeading: ${Math.round(heading)}°\nSpeed: ${Math.round(speed)} kts`
+                       : 'Compass\nRadio location Device\nGPS Location Device', 
+                     hasCheckboxes: false 
+                   },
+                   { title: 'Sensory cues', text: 'Presence of Smoke\nVibration', hasCheckboxes: true },
+                 ].map((note) => (
             <div
               key={note.title}
               style={{
@@ -282,6 +545,7 @@ export default function Page2() {
                   fontSize: '16px',
                   textTransform: 'uppercase',
                   opacity: 1,
+                  flexShrink: 0,
                 }}
               >
                 {note.title}
@@ -373,6 +637,23 @@ export default function Page2() {
       >
         Pilot
       </div>
+
+      {sessionReady && flightId && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 24,
+            right: 24,
+            zIndex: 1000,
+            color: '#0f172a',
+            fontSize: '20px',
+            fontWeight: 600,
+            letterSpacing: '0.1em',
+          }}
+        >
+          {flightId}
+        </div>
+      )}
 
       {/* Engine buttons - only show after session is ready */}
       {sessionReady && (
