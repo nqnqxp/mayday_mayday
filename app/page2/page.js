@@ -5,6 +5,7 @@ import Scene from '@/components/Scene'
 import RoomConnector from '@/components/RoomConnector'
 import ChatConnection from '@/components/ChatConnection'
 import USMap from '@/components/USMap'
+import Cockpit from '@/components/Cockpit'
 import { Realtime } from 'ably'
 
 export default function Page2() {
@@ -505,9 +506,9 @@ export default function Page2() {
             gap: '16px',
             padding: '64px 24px 20px',
             minHeight: '32vh',
-            background: 'linear-gradient(180deg, rgba(241, 245, 249, 1) 0%, rgba(226, 232, 240, 0.85) 100%)',
-            borderBottom: '1px solid rgba(148, 163, 184, 0.25)',
-            boxShadow: '0 12px 30px rgba(148, 163, 184, 0.25)',
+            background: 'transparent',
+            position: 'relative',
+            zIndex: 2,
           }}
         >
                  {[
@@ -594,7 +595,33 @@ export default function Page2() {
         </header>
       )}
 
-      <div style={{ flex: 1, position: 'relative' }}>
+      {/* Scene positioned absolutely to cover full viewport */}
+      {sessionReady && (
+        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 0 }}>
+          <Scene
+            cameraProps={{
+              position: [0, 0.85, 2.1],
+              fov: 38,
+            }}
+            controlsProps={{
+              enablePan: false,
+              enableZoom: false,
+              minDistance: 2.1,
+              maxDistance: 2.1,
+              target: [0, 0.9, -0.35],
+            }}
+            enablePointerEvents={true}
+          >
+            <Cockpit 
+              position={[0, 1, 1.2]}
+              rotation={[0, -Math.PI, 0]}
+              scale={0.75}
+            />
+          </Scene>
+        </div>
+      )}
+
+      <div style={{ flex: 1, position: 'relative', zIndex: 10 }}>
         <RoomConnector
           pageId="Page 2"
           onSessionReady={(state) => {
@@ -604,22 +631,7 @@ export default function Page2() {
             }
           }}
         />
-              {sessionReady && roomCode && <ChatConnection roomCode={roomCode} pageId="Page 2" position="bottom-right" />}
-        <Scene
-          cameraProps={{
-            position: [0, 0.85, 2.1],
-            fov: 38,
-          }}
-          controlsProps={{
-            enablePan: false,
-            enableZoom: false,
-            minDistance: 2.1,
-            maxDistance: 2.1,
-            target: [0, 0.9, -0.35],
-          }}
-        >
-          {/* Visualization intentionally removed */}
-        </Scene>
+        {sessionReady && roomCode && <ChatConnection roomCode={roomCode} pageId="Page 2" position="bottom-right" />}
       </div>
 
       <div

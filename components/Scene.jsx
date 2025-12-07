@@ -3,10 +3,10 @@
 import { Canvas } from '@react-three/fiber'
 import { OrbitControls, PerspectiveCamera } from '@react-three/drei'
 
-export default function Scene({ children, cameraProps, controlsProps }) {
+export default function Scene({ children, cameraProps, controlsProps, enablePointerEvents = false }) {
   return (
     <Canvas
-      style={{ width: '100%', height: '100vh', pointerEvents: 'none' }}
+      style={{ width: '100%', height: '100%', pointerEvents: enablePointerEvents ? 'auto' : 'none' }}
       gl={{ antialias: true, alpha: true }}
     >
       <PerspectiveCamera
