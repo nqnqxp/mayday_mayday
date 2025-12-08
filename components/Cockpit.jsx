@@ -8,7 +8,7 @@ import { GizmoModeContext } from './Scene'
 import { createRoot } from 'react-dom/client'
 import html2canvas from 'html2canvas'
 
-export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], scale = 1, onButtonHover = null, vibrationAffectedEngines = [], onCloseUpMonitorChange = null, chatComponent = null, onExitComms = null }) {
+export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], scale = 1, onButtonHover = null, vibrationAffectedEngines = [], onCloseUpMonitorChange = null, chatComponent = null, onExitComms = null, onExitNavigation = null, navigationData = null, formatCoordinates = null }) {
   const { scene } = useGLTF('/lambda_cockpit_version_1.glb')
   const groupRef = useRef()
   const { raycaster, gl, camera, size, controls } = useThree()
@@ -70,6 +70,45 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
       onExitComms(exitComms)
     }
   }, [onExitComms, closeUpMonitor, camera, controls, onCloseUpMonitorChange, setContextIsCloseUp])
+
+  // Expose exitNavigation function to parent via callback
+  useEffect(() => {
+    if (onExitNavigation) {
+      const exitNavigation = () => {
+        if (closeUpMonitor === 'monitorscreen06' && originalCameraPositionRef.current && originalCameraDirectionRef.current && !isAnimatingRef.current) {
+          isAnimatingRef.current = true
+          animateCamera(
+            camera.position,
+            originalCameraPositionRef.current,
+            originalCameraDirectionRef.current,
+            () => {
+              isAnimatingRef.current = false
+              setIsCloseUp(false)
+              if (setContextIsCloseUp) setContextIsCloseUp(false)
+              setCloseUpMonitor(null)
+              if (onCloseUpMonitorChange) onCloseUpMonitorChange(null)
+              originalCameraPositionRef.current = null
+              originalCameraDirectionRef.current = null
+              // Re-enable controls and restore constraints after animation completes
+              if (controls) {
+                if (controls.enabled !== undefined) {
+                  controls.enabled = true
+                }
+                // Restore original distance constraints
+                if (originalControlsConstraintsRef.current.minDistance !== null) {
+                  controls.minDistance = originalControlsConstraintsRef.current.minDistance
+                }
+                if (originalControlsConstraintsRef.current.maxDistance !== null) {
+                  controls.maxDistance = originalControlsConstraintsRef.current.maxDistance
+                }
+              }
+            }
+          )
+        }
+      }
+      onExitNavigation(exitNavigation)
+    }
+  }, [onExitNavigation, closeUpMonitor, camera, controls, onCloseUpMonitorChange, setContextIsCloseUp])
 
   // Track mouse position using window events (more reliable)
   useEffect(() => {
@@ -341,7 +380,7 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
           }
           
           // Toggle close-up view
-          // Don't allow clicking monitorscreen02 to exit close-up - only 'e' key should do that
+          // Don't allow clicking monitorscreen02 or monitorscreen06 to exit close-up - only exit button should do that
           if (isCloseUp) {
             // If clicking on monitorscreen02 in close-up, don't exit (clicks are forwarded to chatbox)
             if (closeUpMonitor === 'monitorscreen02' && isMonitorscreen02) {
@@ -349,7 +388,13 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
               return
             }
             
-            // Return to original position (for monitorscreen06 or other cases)
+            // If clicking on monitorscreen06 in close-up, don't exit (only exit button should exit)
+            if (closeUpMonitor === 'monitorscreen06' && isMonitorscreen06) {
+              // Don't exit - return without toggling
+              return
+            }
+            
+            // Return to original position (for other cases)
             if (originalCameraPositionRef.current && originalCameraDirectionRef.current) {
                   // OrbitControls should already be removed from scene when in close-up mode
                   // No need to disable it here
@@ -588,6 +633,12 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
       button15.parent.remove(button15)
     }
 
+    // Find and remove button34
+    const button34 = findElement(scene, 'button34')
+    if (button34 && button34.parent) {
+      button34.parent.remove(button34)
+    }
+
     // Find monitorscreen02 first to get its materials
     const element02 = findElement(scene, 'monitorscreen02')
     if (element02) {
@@ -692,8 +743,8 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
   // Apply highlight effect for monitorscreen06 and monitorscreen02 (dark color on hover)
   // button20 and button21 don't change material on hover - they show text instead
   useEffect(() => {
-    // Skip hover effects entirely when in close-up for monitorscreen02
-    if (isCloseUp && closeUpMonitor === 'monitorscreen02') {
+    // Skip hover effects entirely when in close-up for monitorscreen02 or monitorscreen06
+    if (isCloseUp && (closeUpMonitor === 'monitorscreen02' || closeUpMonitor === 'monitorscreen06')) {
       return
     }
     
@@ -704,8 +755,10 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
       if (!elementRef.current) return
       
       // Skip monitorscreen02 entirely when in close-up to prevent interference with chat texture
-      if (elementRef.current === monitorscreen02Ref.current && isCloseUp && closeUpMonitor === 'monitorscreen02') {
-        return // Don't apply any highlight effects when chat texture is active
+      // Skip monitorscreen06 entirely when in close-up to prevent hover effects
+      if ((elementRef.current === monitorscreen02Ref.current && isCloseUp && closeUpMonitor === 'monitorscreen02') ||
+          (elementRef.current === monitorscreen06Ref.current && isCloseUp && closeUpMonitor === 'monitorscreen06')) {
+        return // Don't apply any highlight effects when in close-up
       }
 
       elementRef.current.traverse((child) => {
@@ -777,11 +830,14 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
     }
 
     // Apply dark highlight for monitorscreen06
-    applyHighlight(
-      monitorscreen06Ref,
-      isHovered06,
-      originalMaterialsRef
-    )
+    // Skip if in close-up to prevent hover effects
+    if (!(isCloseUp && closeUpMonitor === 'monitorscreen06')) {
+      applyHighlight(
+        monitorscreen06Ref,
+        isHovered06,
+        originalMaterialsRef
+      )
+    }
 
     // Apply dark highlight for monitorscreen02
     // Skip if in close-up to prevent interference with chat texture
@@ -1008,6 +1064,19 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
   // Apply vibration effect to cockpit when engines are affected
   const hasVibration = vibrationAffectedEngines.length > 0
   const basePositionRef = useRef(new THREE.Vector3(...position))
+  const vibrationStartTimeRef = useRef(null)
+  const rampUpDuration = 2.0 // Time in seconds to reach full intensity
+  
+  // Track when vibration starts
+  useEffect(() => {
+    if (hasVibration && vibrationStartTimeRef.current === null) {
+      // Vibration just started - record the start time
+      vibrationStartTimeRef.current = Date.now()
+    } else if (!hasVibration) {
+      // Vibration stopped - reset start time
+      vibrationStartTimeRef.current = null
+    }
+  }, [hasVibration])
   
   // Update base position when position prop changes and initialize group position
   useEffect(() => {
@@ -1021,8 +1090,21 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
   
   useFrame((state, delta) => {
     if (groupRef.current && hasVibration) {
+      // Calculate ramp-up factor (0 to 1)
+      let rampUpFactor = 1.0
+      if (vibrationStartTimeRef.current !== null) {
+        const elapsed = (Date.now() - vibrationStartTimeRef.current) / 1000 // Convert to seconds
+        const progress = Math.min(elapsed / rampUpDuration, 1.0) // Clamp to 1.0
+        
+        // Use ease-in-out curve for smooth ramp-up
+        rampUpFactor = progress < 0.5
+          ? 2 * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 2) / 2
+      }
+      
       // Create a shaking effect with random small offsets
-      const intensity = 0.005 // Vibration intensity (reduced for subtler effect)
+      const maxIntensity = 0.005 // Maximum vibration intensity (reduced for subtler effect)
+      const intensity = maxIntensity * rampUpFactor // Apply ramp-up factor
       const time = state.clock.elapsedTime
       
       // Use multiple sine waves at different frequencies for more realistic vibration
@@ -1052,8 +1134,9 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
 
     // Check monitorscreen06, monitorscreen02, button20, and button21
     // Skip monitorscreen02 if in close-up for monitorscreen02 (no hover interaction)
+    // Skip monitorscreen06 if in close-up for monitorscreen06 (no hover interaction)
     const elementsToCheck = [
-      { ref: monitorscreen06Ref, name: 'monitorscreen06' },
+      ...(isCloseUp && closeUpMonitor === 'monitorscreen06' ? [] : [{ ref: monitorscreen06Ref, name: 'monitorscreen06' }]),
       ...(isCloseUp && closeUpMonitor === 'monitorscreen02' ? [] : [{ ref: monitorscreen02Ref, name: 'monitorscreen02' }]),
       { ref: button20Ref, name: 'button20' },
       { ref: button21Ref, name: 'button21' }
@@ -1110,7 +1193,7 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
         // Notify parent component about button hover
         if (onButtonHover) {
           // Clear previous hover if it was a button or monitor
-          if (previousHovered === button20Ref.current || previousHovered === button21Ref.current || previousHovered === monitorscreen02Ref.current) {
+          if (previousHovered === button20Ref.current || previousHovered === button21Ref.current || previousHovered === monitorscreen02Ref.current || previousHovered === monitorscreen06Ref.current) {
             onButtonHover(null)
           }
           // Set new button/monitor hover
@@ -1121,6 +1204,9 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
           } else if (foundIntersection === monitorscreen02Ref.current) {
             // monitorscreen02 hover (only when not in close-up)
             onButtonHover('monitorscreen02')
+          } else if (foundIntersection === monitorscreen06Ref.current) {
+            // monitorscreen06 hover (only when not in close-up)
+            onButtonHover('monitorscreen06')
           } else {
             onButtonHover(null)
           }
@@ -1128,7 +1214,7 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
       }
     } else {
       if (hoveredElement) {
-        const wasButtonOrMonitor = hoveredElement === button20Ref.current || hoveredElement === button21Ref.current || hoveredElement === monitorscreen02Ref.current
+        const wasButtonOrMonitor = hoveredElement === button20Ref.current || hoveredElement === button21Ref.current || hoveredElement === monitorscreen02Ref.current || hoveredElement === monitorscreen06Ref.current
         setHoveredElement(null)
         gl.domElement.style.cursor = 'default'
         
@@ -1635,6 +1721,384 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
                     }
                   }
                 })
+              }
+            }
+          }
+        })
+      }
+    }
+  })
+
+  // Create canvas texture for navigation display on monitorscreen06
+  const navCanvasRef = useRef(null)
+  const navContainerRef = useRef(null)
+  const navTextureRef = useRef(null)
+  const navRootRef = useRef(null)
+  const navTextureUpdateIntervalRef = useRef(null)
+  
+  // Initialize canvas and texture for navigation
+  useEffect(() => {
+    if (!navCanvasRef.current) {
+      const canvas = document.createElement('canvas')
+      canvas.width = 1024
+      canvas.height = 1024
+      navCanvasRef.current = canvas
+      
+      // Initialize canvas with black background
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        // Black background for navigation UI
+        ctx.fillStyle = '#000000'
+        ctx.fillRect(0, 0, 1024, 1024)
+        ctx.lineWidth = 20
+        ctx.strokeRect(50, 50, 924, 924)
+      }
+      
+      const texture = new THREE.CanvasTexture(canvas)
+      texture.flipY = false
+      texture.needsUpdate = true
+      navTextureRef.current = texture
+    }
+    
+    // Create hidden container for React rendering
+    if (!navContainerRef.current) {
+      const container = document.createElement('div')
+      container.id = 'monitorscreen06-nav-container'
+      container.style.width = '400px'
+      container.style.height = '300px'
+      container.style.position = 'fixed'
+      container.style.left = '-10000px'
+      container.style.top = '-10000px'
+      container.style.visibility = 'hidden'
+      container.style.opacity = '0'
+      container.style.pointerEvents = 'auto'
+      container.style.overflow = 'hidden'
+      container.style.transform = 'scale(1)'
+      container.style.zIndex = '-1'
+      container.style.boxSizing = 'border-box'
+      document.body.appendChild(container)
+      navContainerRef.current = container
+    }
+    
+    return () => {
+      if (navContainerRef.current && navContainerRef.current.parentNode) {
+        navContainerRef.current.parentNode.removeChild(navContainerRef.current)
+      }
+      if (navRootRef.current) {
+        navRootRef.current.unmount()
+        navRootRef.current = null
+      }
+      if (navTextureUpdateIntervalRef.current) {
+        clearInterval(navTextureUpdateIntervalRef.current)
+      }
+    }
+  }, [])
+  
+  // Render navigation component to container and update texture
+  useEffect(() => {
+    if (navigationData && navContainerRef.current && navCanvasRef.current && formatCoordinates) {
+      // Render React component to hidden container
+      if (!navRootRef.current) {
+        const root = createRoot(navContainerRef.current)
+        navRootRef.current = root
+      }
+      
+      if (navRootRef.current) {
+        // Create navigation display component
+        const navDisplay = (
+          <div style={{
+            width: '100%',
+            height: '100%',
+            background: '#000000',
+            color: '#f8fafc',
+            padding: '20px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
+            fontFamily: 'monospace',
+            fontSize: '14px',
+            lineHeight: 1.6,
+          }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {navigationData.latitude !== null && navigationData.longitude !== null && (
+                <>
+                  <img 
+                    src="/naviinstruments.png" 
+                    alt="Navigation Instruments" 
+                    style={{ 
+                      maxWidth: '50%', 
+                      height: 'auto',
+                      marginBottom: '12px'
+                    }} 
+                  />
+                  <div>Position: {formatCoordinates(navigationData.latitude, navigationData.longitude)}</div>
+                  <div>Heading: {Math.round(navigationData.heading || 0)}°</div>
+                  <div>Speed: {Math.round(navigationData.speed || 0)} kts</div>
+                </>
+              )}
+            </div>
+          </div>
+        )
+        
+        navRootRef.current.render(navDisplay)
+        
+        // Function to capture container to canvas
+        const captureToCanvas = () => {
+          if (!navContainerRef.current || !navCanvasRef.current) return
+          
+          const container = navContainerRef.current
+          const canvas = navCanvasRef.current
+          const ctx = canvas.getContext('2d')
+          
+          if (!ctx) return
+          
+          const containerWidth = container.scrollWidth || container.offsetWidth || 400
+          const containerHeight = container.scrollHeight || container.offsetHeight || 300
+          
+          const targetScale = 2.56 // 1024 / 400 = 2.56
+          
+          // Temporarily make container visible for capture
+          const originalVisibility = container.style.visibility
+          const originalOpacity = container.style.opacity
+          const originalPosition = container.style.position
+          const originalLeft = container.style.left
+          const originalTop = container.style.top
+          
+          container.style.visibility = 'visible'
+          container.style.opacity = '1'
+          container.style.position = 'fixed'
+          container.style.left = '0px'
+          container.style.top = '0px'
+          
+          html2canvas(container, {
+            width: containerWidth,
+            height: containerHeight,
+            backgroundColor: null,
+            scale: targetScale,
+            useCORS: true,
+            allowTaint: true,
+            logging: false,
+            windowWidth: containerWidth,
+            windowHeight: containerHeight,
+            ignoreElements: (element) => false,
+            onclone: (clonedDoc) => {
+              const clonedContainer = clonedDoc.getElementById('monitorscreen06-nav-container')
+              if (clonedContainer) {
+                clonedContainer.style.visibility = 'visible'
+                clonedContainer.style.position = 'absolute'
+                clonedContainer.style.left = '0'
+                clonedContainer.style.top = '0'
+                clonedContainer.style.opacity = '1'
+              }
+            }
+          }).then((htmlCanvas) => {
+            // Restore container visibility after capture
+            container.style.visibility = originalVisibility
+            container.style.opacity = originalOpacity
+            container.style.position = originalPosition
+            container.style.left = originalLeft
+            container.style.top = originalTop
+            
+            // Clear canvas first
+            ctx.clearRect(0, 0, 1024, 1024)
+            
+            // Fill with black background color
+            ctx.fillStyle = '#000000'
+            ctx.fillRect(0, 0, 1024, 1024)
+            
+            // Scale down the texture
+            const scaleDown = 0.85
+            const scaledWidth = htmlCanvas.width * scaleDown
+            const scaledHeight = htmlCanvas.height * scaleDown
+            
+            // Center horizontally and vertically
+            const offsetX = (1024 - scaledWidth) / 2
+            const offsetY = (1024 - scaledHeight) / 2 + 80
+            
+            // Draw the navigation content
+            ctx.drawImage(htmlCanvas, offsetX, offsetY, scaledWidth, scaledHeight)
+            
+            if (navTextureRef.current) {
+              navTextureRef.current.needsUpdate = true
+            }
+          }).catch((error) => {
+            // Restore container visibility even on error
+            container.style.visibility = originalVisibility
+            container.style.opacity = originalOpacity
+            container.style.position = originalPosition
+            container.style.left = originalLeft
+            container.style.top = originalTop
+            console.error('Error capturing navigation to canvas:', error)
+            
+            // Fallback: Draw a simple representation
+            ctx.fillStyle = '#000000'
+            ctx.fillRect(0, 0, 1024, 1024)
+            ctx.fillStyle = '#60a5fa'
+            ctx.font = 'bold 64px Arial'
+            ctx.textAlign = 'center'
+            ctx.fillText('Navigation', 512, 400)
+            ctx.fillStyle = '#f8fafc'
+            ctx.font = '32px Arial'
+            ctx.fillText('Display Active', 512, 500)
+            if (navTextureRef.current) {
+              navTextureRef.current.needsUpdate = true
+            }
+          })
+        }
+        
+        // Only capture and update texture when in close-up for monitorscreen06
+        if (isCloseUp && closeUpMonitor === 'monitorscreen06') {
+          // Wait for React to render, then capture
+          setTimeout(captureToCanvas, 300)
+          
+          // Set up periodic updates to refresh the texture
+          if (navTextureUpdateIntervalRef.current) {
+            clearInterval(navTextureUpdateIntervalRef.current)
+          }
+          navTextureUpdateIntervalRef.current = setInterval(captureToCanvas, 1000) // Update every second
+        } else {
+          // Clear interval when not in close-up
+          if (navTextureUpdateIntervalRef.current) {
+            clearInterval(navTextureUpdateIntervalRef.current)
+            navTextureUpdateIntervalRef.current = null
+          }
+        }
+      }
+    }
+  }, [navigationData, formatCoordinates, isCloseUp, closeUpMonitor])
+  
+  // Apply texture to monitorscreen06 material - use useFrame to ensure it persists
+  const navTextureAppliedRef = useRef(false)
+  const lastNavLogTimeRef = useRef(0)
+  const lastNavMaterialCheckRef = useRef(null)
+  
+  useFrame(() => {
+    const now = Date.now()
+    const shouldLog = now - lastNavLogTimeRef.current > 2000
+    
+    if (monitorscreen06Ref.current && navTextureRef.current && isCloseUp && closeUpMonitor === 'monitorscreen06') {
+      let applied = false
+      
+      monitorscreen06Ref.current.traverse((child) => {
+        if (child.isMesh && child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material]
+          materials.forEach((mat, matIndex) => {
+            if (mat) {
+              const isNavMaterial = mat.userData?.isNavMaterial && mat.type === 'MeshBasicMaterial'
+              const hasCorrectTexture = mat.map === navTextureRef.current
+              
+              if (!isNavMaterial || !hasCorrectTexture || mat.type !== 'MeshBasicMaterial' || true) {
+                if (!mat.userData.isNavMaterial || mat.type !== 'MeshBasicMaterial' || mat.map !== navTextureRef.current) {
+                  const basicMat = new THREE.MeshBasicMaterial({
+                    map: navTextureRef.current,
+                    color: new THREE.Color(0xffffff),
+                    transparent: false,
+                    opacity: 1.0,
+                    side: THREE.DoubleSide,
+                  })
+                  
+                  // Fix orientation: rotate 90 degrees counter-clockwise, flip horizontally
+                  if (basicMat.map) {
+                    basicMat.map.flipY = false
+                    basicMat.map.wrapS = THREE.RepeatWrapping
+                    basicMat.map.wrapT = THREE.RepeatWrapping
+                    basicMat.map.rotation = Math.PI / 2 - (3 * Math.PI / 180) // 90° - 3° = 87° counter-clockwise
+                    basicMat.map.center.set(0.5, 0.5)
+                    basicMat.map.repeat.x = -1
+                    basicMat.map.offset.y = -0.1
+                  }
+                  
+                  basicMat.userData = { ...mat.userData }
+                  basicMat.userData.isNavMaterial = true
+                  
+                  const materialIndex = Array.isArray(child.material) 
+                    ? materials.indexOf(mat) 
+                    : 0
+                  
+                  if (Array.isArray(child.material)) {
+                    const newMaterials = [...child.material]
+                    newMaterials[materialIndex] = basicMat
+                    child.material = newMaterials
+                  } else {
+                    child.material = basicMat
+                  }
+                  
+                  applied = true
+                  lastNavMaterialCheckRef.current = `MeshBasicMaterial-nav`
+                } else {
+                  // Force recreate to ensure it's always correct
+                  const basicMat = new THREE.MeshBasicMaterial({
+                    map: navTextureRef.current,
+                    color: new THREE.Color(0xffffff),
+                    transparent: false,
+                    opacity: 1.0,
+                    side: THREE.DoubleSide,
+                  })
+                  
+                  if (basicMat.map) {
+                    basicMat.map.flipY = false
+                    basicMat.map.wrapS = THREE.RepeatWrapping
+                    basicMat.map.wrapT = THREE.RepeatWrapping
+                    basicMat.map.rotation = Math.PI / 2 - (3 * Math.PI / 180)
+                    basicMat.map.center.set(0.5, 0.5)
+                    basicMat.map.repeat.x = -1
+                    basicMat.map.offset.y = -0.1
+                  }
+                  
+                  basicMat.userData = { ...mat.userData }
+                  basicMat.userData.isNavMaterial = true
+                  
+                  const materialIndex = Array.isArray(child.material) 
+                    ? materials.indexOf(mat) 
+                    : 0
+                  
+                  if (Array.isArray(child.material)) {
+                    const newMaterials = [...child.material]
+                    newMaterials[materialIndex] = basicMat
+                    child.material = newMaterials
+                  } else {
+                    child.material = basicMat
+                  }
+                  
+                  lastNavMaterialCheckRef.current = `MeshBasicMaterial-nav`
+                  applied = true
+                }
+              }
+            }
+          })
+        }
+      })
+      
+      if (applied) {
+        navTextureAppliedRef.current = true
+      }
+    } else {
+      navTextureAppliedRef.current = false
+      if (monitorscreen06Ref.current && !isCloseUp) {
+        // Restore original materials when not in close-up
+        monitorscreen06Ref.current.traverse((child) => {
+          if (child.isMesh && child.material) {
+            const currentMaterials = Array.isArray(child.material) ? child.material : [child.material]
+            const isNavMaterial = currentMaterials.some(m => m?.userData?.isNavMaterial)
+            
+            if (isNavMaterial) {
+              const originalMaterials = originalMaterialsRef.current.get(child)
+              if (originalMaterials) {
+                if (Array.isArray(child.material)) {
+                  child.material = originalMaterials.map(m => m.clone())
+                } else {
+                  child.material = originalMaterials[0].clone()
+                }
+                const restoredMaterials = Array.isArray(child.material) ? child.material : [child.material]
+                restoredMaterials.forEach((mat) => {
+                  if (mat) {
+                    mat.needsUpdate = true
+                    if (mat.userData) {
+                      mat.userData.isNavMaterial = false
+                    }
+                  }
+                })
+                child.material.needsUpdate = true
               }
             }
           }

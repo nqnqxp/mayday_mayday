@@ -40,9 +40,10 @@ export default function Page2() {
   const [gizmoMode, setGizmoMode] = useState(false)
   const [isCloseUp, setIsCloseUp] = useState(false)
   const [shaderEnabled, setShaderEnabled] = useState(true)
-  const [hoveredButton, setHoveredButton] = useState(null) // 'button20', 'button21', 'monitorscreen02', 'monitorscreen02-exit', or null
+  const [hoveredButton, setHoveredButton] = useState(null) // 'button20', 'button21', 'monitorscreen02', 'monitorscreen06', 'monitorscreen02-exit', or null
   const [closeUpMonitor, setCloseUpMonitor] = useState(null) // 'monitorscreen06', 'monitorscreen02', or null
   const exitCommsRef = useRef(null) // Ref to store the exitComms function from Cockpit
+  const exitNavigationRef = useRef(null) // Ref to store the exitNavigation function from Cockpit
   const [notesCollapsed, setNotesCollapsed] = useState(false) // For collapsing notes
 
   // Format coordinates for display
@@ -630,9 +631,17 @@ export default function Page2() {
               vibrationAffectedEngines={vibrationAffectedEngines}
               onCloseUpMonitorChange={setCloseUpMonitor}
               onExitComms={(exitFn) => { exitCommsRef.current = exitFn }}
+              onExitNavigation={(exitFn) => { exitNavigationRef.current = exitFn }}
               chatComponent={sessionReady && roomCode ? (
                 <ChatConnection roomCode={roomCode} pageId="Page 2" position="inline" />
               ) : null}
+              navigationData={{
+                latitude,
+                longitude,
+                heading,
+                speed
+              }}
+              formatCoordinates={formatCoordinates}
             />
           </Scene>
           </GizmoModeContext.Provider>
@@ -770,7 +779,7 @@ export default function Page2() {
             pointerEvents: 'none',
           }}
         >
-          {hoveredButton === 'button20' ? 'Engine 1' : hoveredButton === 'button21' ? 'Engine 2' : hoveredButton === 'monitorscreen02' ? 'Communication' : ''}
+          {hoveredButton === 'button20' ? 'Engine 1' : hoveredButton === 'button21' ? 'Engine 2' : hoveredButton === 'monitorscreen02' ? 'Communication' : hoveredButton === 'monitorscreen06' ? 'Navigation Instruments' : ''}
         </div>
       )}
 
@@ -810,6 +819,45 @@ export default function Page2() {
           }}
         >
           Exit Comms
+        </button>
+      )}
+
+      {/* Exit navigation button when in close-up for monitorscreen06 */}
+      {sessionReady && isCloseUp && closeUpMonitor === 'monitorscreen06' && (
+        <button
+          onClick={() => {
+            if (exitNavigationRef.current) {
+              exitNavigationRef.current()
+            }
+          }}
+          style={{
+            position: 'absolute',
+            bottom: 24,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1000,
+            padding: '12px 24px',
+            borderRadius: '8px',
+            background: 'rgba(15, 23, 42, 0.9)',
+            color: '#ffffff',
+            fontSize: '18px',
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(15, 23, 42, 1)'
+            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.4)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(15, 23, 42, 0.9)'
+            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+          }}
+        >
+          Exit Navigation
         </button>
       )}
 
