@@ -539,9 +539,11 @@ export default function Page3() {
             }
           }}
         />
-      <Scene>
+      {sessionReady && (
+        <Scene showClouds={true}>
           {/* The controller page does not render the cockpit visuals */}
-      </Scene>
+        </Scene>
+      )}
       </div>
 
       <div

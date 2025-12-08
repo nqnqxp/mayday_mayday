@@ -510,6 +510,7 @@ export default function ChatConnection({ roomCode, pageId, position = 'bottom-ri
             fontWeight: 600,
             cursor: connectionState === 'idle' ? 'pointer' : 'not-allowed',
             pointerEvents: connectionState === 'idle' ? 'auto' : 'none',
+            marginTop: '10px', // Slight downward adjustment
           }}
         >
           Connect to ATC

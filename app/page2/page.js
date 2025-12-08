@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import Scene from '@/components/Scene'
+import Scene, { GizmoModeContext } from '@/components/Scene'
 import RoomConnector from '@/components/RoomConnector'
 import ChatConnection from '@/components/ChatConnection'
 import USMap from '@/components/USMap'
@@ -37,6 +37,13 @@ export default function Page2() {
   const longitudeRef = useRef(null)
   const headingRef = useRef(null)
   const speedRef = useRef(null)
+  const [gizmoMode, setGizmoMode] = useState(false)
+  const [isCloseUp, setIsCloseUp] = useState(false)
+  const [shaderEnabled, setShaderEnabled] = useState(true)
+  const [hoveredButton, setHoveredButton] = useState(null) // 'button20', 'button21', 'monitorscreen02', 'monitorscreen02-exit', or null
+  const [closeUpMonitor, setCloseUpMonitor] = useState(null) // 'monitorscreen06', 'monitorscreen02', or null
+  const exitCommsRef = useRef(null) // Ref to store the exitComms function from Cockpit
+  const [notesCollapsed, setNotesCollapsed] = useState(false) // For collapsing notes
 
   // Format coordinates for display
   const formatCoordinates = (lat, lon) => {
@@ -501,7 +508,7 @@ export default function Page2() {
       {sessionReady && (
         <header
           style={{
-            display: 'grid',
+            display: notesCollapsed ? 'none' : 'grid',
             gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
             gap: '16px',
             padding: '64px 24px 20px',
@@ -598,12 +605,13 @@ export default function Page2() {
       {/* Scene positioned absolutely to cover full viewport */}
       {sessionReady && (
         <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 0 }}>
-          <Scene
-            cameraProps={{
-              position: [0, 0.85, 2.1],
-              fov: 38,
-            }}
-            controlsProps={{
+          <GizmoModeContext.Provider value={{ gizmoMode, setGizmoMode, isCloseUp, setIsCloseUp }}>
+            <Scene
+              cameraProps={{
+                position: [0, 0.85, 2.1],
+                fov: 38,
+              }}
+              controlsProps={{
               enablePan: false,
               enableZoom: false,
               minDistance: 2.1,
@@ -611,13 +619,23 @@ export default function Page2() {
               target: [0, 0.9, -0.35],
             }}
             enablePointerEvents={true}
+            enableShader={shaderEnabled}
+            smokeAffectedEngines={smokeAffectedEngines}
           >
             <Cockpit 
               position={[0, 1, 1.2]}
               rotation={[0, -Math.PI, 0]}
               scale={0.75}
+              onButtonHover={setHoveredButton}
+              vibrationAffectedEngines={vibrationAffectedEngines}
+              onCloseUpMonitorChange={setCloseUpMonitor}
+              onExitComms={(exitFn) => { exitCommsRef.current = exitFn }}
+              chatComponent={sessionReady && roomCode ? (
+                <ChatConnection roomCode={roomCode} pageId="Page 2" position="inline" />
+              ) : null}
             />
           </Scene>
+          </GizmoModeContext.Provider>
         </div>
       )}
 
@@ -631,7 +649,7 @@ export default function Page2() {
             }
           }}
         />
-        {sessionReady && roomCode && <ChatConnection roomCode={roomCode} pageId="Page 2" position="bottom-right" />}
+        {/* Chat is now only displayed on monitorscreen02 as a texture, never as UI */}
       </div>
 
       <div
@@ -665,6 +683,134 @@ export default function Page2() {
         >
           {flightId}
         </div>
+      )}
+
+      {/* Debug buttons */}
+      {sessionReady && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 24,
+            right: 24,
+            zIndex: 1000,
+            display: 'flex',
+            gap: '12px',
+          }}
+        >
+          {/* Notes collapse button */}
+          <button
+            onClick={() => setNotesCollapsed(!notesCollapsed)}
+            style={{
+              padding: '12px 20px',
+              borderRadius: '8px',
+              border: '2px solid #0f172a',
+              background: notesCollapsed ? '#0f172a' : '#ffffff',
+              color: notesCollapsed ? '#ffffff' : '#0f172a',
+              fontSize: '14px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.opacity = '0.8'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.opacity = '1'
+            }}
+          >
+            {notesCollapsed ? 'Notes: Hidden' : 'Notes: Shown'}
+          </button>
+          {/* Shader toggle button */}
+          <button
+            onClick={() => setShaderEnabled(!shaderEnabled)}
+            style={{
+              padding: '12px 20px',
+              borderRadius: '8px',
+              border: '2px solid #0f172a',
+              background: shaderEnabled ? '#0f172a' : '#ffffff',
+              color: shaderEnabled ? '#ffffff' : '#0f172a',
+              fontSize: '14px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              transition: 'all 0.2s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.opacity = '0.8'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.opacity = '1'
+            }}
+          >
+            {shaderEnabled ? 'Shader: ON' : 'Shader: OFF'}
+          </button>
+        </div>
+      )}
+
+      {/* Button hover text display */}
+      {sessionReady && hoveredButton && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: 24,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1000,
+            padding: '12px 24px',
+            borderRadius: '8px',
+            background: 'rgba(15, 23, 42, 0.9)',
+            color: '#ffffff',
+            fontSize: '18px',
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+            pointerEvents: 'none',
+          }}
+        >
+          {hoveredButton === 'button20' ? 'Engine 1' : hoveredButton === 'button21' ? 'Engine 2' : hoveredButton === 'monitorscreen02' ? 'Communication' : ''}
+        </div>
+      )}
+
+      {/* Exit comms button when in close-up for monitorscreen02 */}
+      {sessionReady && isCloseUp && closeUpMonitor === 'monitorscreen02' && (
+        <button
+          onClick={() => {
+            if (exitCommsRef.current) {
+              exitCommsRef.current()
+            }
+          }}
+          style={{
+            position: 'absolute',
+            bottom: 24,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1000,
+            padding: '12px 24px',
+            borderRadius: '8px',
+            background: 'rgba(15, 23, 42, 0.9)',
+            color: '#ffffff',
+            fontSize: '18px',
+            fontWeight: 600,
+            textTransform: 'uppercase',
+            letterSpacing: '0.1em',
+            border: '1px solid rgba(255, 255, 255, 0.2)',
+            cursor: 'pointer',
+            transition: 'all 0.2s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(15, 23, 42, 1)'
+            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.4)'
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'rgba(15, 23, 42, 0.9)'
+            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)'
+          }}
+        >
+          Exit Comms
+        </button>
       )}
 
       {/* Engine buttons - only show after session is ready */}
