@@ -8,7 +8,7 @@ import { GizmoModeContext } from './Scene'
 import { createRoot } from 'react-dom/client'
 import html2canvas from 'html2canvas'
 
-export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], scale = 1, onButtonHover = null, vibrationAffectedEngines = [], onCloseUpMonitorChange = null, chatComponent = null, onExitComms = null, onExitNavigation = null, navigationData = null, formatCoordinates = null }) {
+export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], scale = 1, onButtonHover = null, vibrationAffectedEngines = [], smokeAffectedEngines = [], onCloseUpMonitorChange = null, chatComponent = null, onExitComms = null, onExitNavigation = null, navigationData = null, formatCoordinates = null, checkedItems = {} }) {
   const { scene } = useGLTF('/lambda_cockpit_version_1.glb')
   const groupRef = useRef()
   const { raycaster, gl, camera, size, controls } = useThree()
@@ -20,10 +20,24 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
   const monitorscreen02Ref = useRef(null)
   const button20Ref = useRef(null)
   const button21Ref = useRef(null)
+  const button18Ref = useRef(null)
+  const button27Ref = useRef(null)
+  const button28Ref = useRef(null)
+  const butotn28Ref = useRef(null) // Note: typo in model name is intentional
+  const button29Ref = useRef(null)
+  const button31Ref = useRef(null)
+  const button32Ref = useRef(null)
   const originalMaterialsRef = useRef(new Map())
   const originalMaterials02Ref = useRef(new Map())
   const originalMaterialsButton20Ref = useRef(new Map())
   const originalMaterialsButton21Ref = useRef(new Map())
+  const originalMaterialsButton18Ref = useRef(new Map())
+  const originalMaterialsButton27Ref = useRef(new Map())
+  const originalMaterialsButton28Ref = useRef(new Map())
+  const originalMaterialsButotn28Ref = useRef(new Map())
+  const originalMaterialsButton29Ref = useRef(new Map())
+  const originalMaterialsButton31Ref = useRef(new Map())
+  const originalMaterialsButton32Ref = useRef(new Map())
   const mousePositionRef = useRef({ x: 0, y: 0 })
   const originalCameraPositionRef = useRef(null)
   const originalCameraDirectionRef = useRef(null)
@@ -639,6 +653,12 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
       button34.parent.remove(button34)
     }
 
+    // Find and remove button30
+    const button30 = findElement(scene, 'button30')
+    if (button30 && button30.parent) {
+      button30.parent.remove(button30)
+    }
+
     // Find monitorscreen02 first to get its materials
     const element02 = findElement(scene, 'monitorscreen02')
     if (element02) {
@@ -698,16 +718,23 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
           const materials = Array.isArray(child.material) ? child.material : [child.material]
           const clonedMaterials = materials.map(mat => {
             const cloned = mat.clone()
-            // Make the material darker
+            // Make the material the same brightness as warning system buttons (70%)
             if (cloned.color) {
-              cloned.color.multiplyScalar(0.4) // Make it 40% of original brightness (darker)
+              cloned.color.multiplyScalar(0.7) // Make it 70% of original brightness (same as warning buttons)
+            }
+            // Set roughness to 100% (or smoothness to 0%)
+            if (cloned.roughness !== undefined) {
+              cloned.roughness = 1.0
+            }
+            if (cloned.metalness !== undefined) {
+              cloned.metalness = 0.0 // Also set metalness to 0 for matte appearance
             }
             cloned.needsUpdate = true
             return cloned
           })
-          // Apply the darker material to the mesh
+          // Apply the material to the mesh
           child.material = Array.isArray(child.material) ? clonedMaterials : clonedMaterials[0]
-          // Store the darker material as "original" for hover effects
+          // Store the material as "original" for hover effects
           originalMaterialsButton20Ref.current.set(child, clonedMaterials.map(mat => mat.clone()))
         }
       })
@@ -724,21 +751,267 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
           const materials = Array.isArray(child.material) ? child.material : [child.material]
           const clonedMaterials = materials.map(mat => {
             const cloned = mat.clone()
-            // Make the material darker
+            // Make the material the same brightness as warning system buttons (70%)
             if (cloned.color) {
-              cloned.color.multiplyScalar(0.4) // Make it 40% of original brightness (darker)
+              cloned.color.multiplyScalar(0.7) // Make it 70% of original brightness (same as warning buttons)
+            }
+            // Set roughness to 100% (or smoothness to 0%)
+            if (cloned.roughness !== undefined) {
+              cloned.roughness = 1.0
+            }
+            if (cloned.metalness !== undefined) {
+              cloned.metalness = 0.0 // Also set metalness to 0 for matte appearance
             }
             cloned.needsUpdate = true
             return cloned
           })
-          // Apply the darker material to the mesh
+          // Apply the material to the mesh
           child.material = Array.isArray(child.material) ? clonedMaterials : clonedMaterials[0]
-          // Store the darker material as "original" for hover effects
+          // Store the material as "original" for hover effects
           originalMaterialsButton21Ref.current.set(child, clonedMaterials.map(mat => mat.clone()))
         }
       })
     }
+
+    // Find and store reference to button18
+    const button18 = findElement(scene, 'button18')
+    if (button18) {
+      button18Ref.current = button18
+      // Store original materials
+      button18.traverse((child) => {
+        if (child.isMesh && child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material]
+          originalMaterialsButton18Ref.current.set(child, materials.map(mat => mat.clone()))
+        }
+      })
+    }
+
+    // Find and store reference to button27
+    const button27 = findElement(scene, 'button27')
+    if (button27) {
+      button27Ref.current = button27
+      // Store original materials
+      button27.traverse((child) => {
+        if (child.isMesh && child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material]
+          originalMaterialsButton27Ref.current.set(child, materials.map(mat => mat.clone()))
+        }
+      })
+    }
+
+    // Find and store reference to button28
+    const button28 = findElement(scene, 'button28')
+    if (button28) {
+      button28Ref.current = button28
+      // Store original materials
+      button28.traverse((child) => {
+        if (child.isMesh && child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material]
+          originalMaterialsButton28Ref.current.set(child, materials.map(mat => mat.clone()))
+        }
+      })
+    }
+
+    // Find and store reference to butotn28 (typo in model name is intentional)
+    const butotn28 = findElement(scene, 'butotn28')
+    if (butotn28) {
+      butotn28Ref.current = butotn28
+      // Store original materials
+      butotn28.traverse((child) => {
+        if (child.isMesh && child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material]
+          originalMaterialsButotn28Ref.current.set(child, materials.map(mat => mat.clone()))
+        }
+      })
+    }
+
+    // Find and store reference to button29
+    const button29 = findElement(scene, 'button29')
+    if (button29) {
+      button29Ref.current = button29
+      // Store original materials
+      button29.traverse((child) => {
+        if (child.isMesh && child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material]
+          originalMaterialsButton29Ref.current.set(child, materials.map(mat => mat.clone()))
+        }
+      })
+    }
+
+    // Find and store reference to button31
+    const button31 = findElement(scene, 'button31')
+    if (button31) {
+      button31Ref.current = button31
+      // Store original materials
+      button31.traverse((child) => {
+        if (child.isMesh && child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material]
+          originalMaterialsButton31Ref.current.set(child, materials.map(mat => mat.clone()))
+        }
+      })
+    }
+
+    // Find and store reference to button32
+    const button32 = findElement(scene, 'button32')
+    if (button32) {
+      button32Ref.current = button32
+      // Store original materials
+      button32.traverse((child) => {
+        if (child.isMesh && child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material]
+          originalMaterialsButton32Ref.current.set(child, materials.map(mat => mat.clone()))
+        }
+      })
+    }
   }, [scene])
+
+  // Apply darker material to warning system buttons based on checkedItems
+  useEffect(() => {
+    // Map buttons to their checkbox keys in note 2
+    const buttonCheckboxMap = [
+      { ref: button18Ref, key: 'Cockpit Warning System-0', originalMaterials: originalMaterialsButton18Ref }, // ANTI ICE
+      { ref: button27Ref, key: 'Cockpit Warning System-1', originalMaterials: originalMaterialsButton27Ref }, // ENG
+      { ref: button28Ref, key: 'Cockpit Warning System-0', originalMaterials: originalMaterialsButton28Ref }, // ANTI ICE (button28 is ANTI ICE)
+      { ref: butotn28Ref, key: 'Cockpit Warning System-2', originalMaterials: originalMaterialsButotn28Ref }, // HYD (butotn28 is HYD)
+      { ref: button31Ref, key: 'Cockpit Warning System-3', originalMaterials: originalMaterialsButton31Ref }, // OVERHEAD
+      { ref: button32Ref, key: 'Cockpit Warning System-4', originalMaterials: originalMaterialsButton32Ref }, // DOORS
+      { ref: button29Ref, key: 'Cockpit Warning System-5', originalMaterials: originalMaterialsButton29Ref }, // AIR COND
+    ]
+
+    buttonCheckboxMap.forEach(({ ref, key, originalMaterials }) => {
+      if (!ref.current) return
+
+      const isChecked = checkedItems[key] || false
+
+      ref.current.traverse((child) => {
+        if (child.isMesh && child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material]
+          
+          if (isChecked) {
+            // Apply lighter material when checked
+            const lighterMaterials = materials.map(mat => {
+              const lighter = mat.clone()
+              if (lighter.color) {
+                lighter.color.multiplyScalar(0.7) // Make it 70% of original brightness (lighter)
+              }
+              lighter.needsUpdate = true
+              return lighter
+            })
+            child.material = Array.isArray(child.material) ? lighterMaterials : lighterMaterials[0]
+          } else {
+            // Restore original materials when unchecked
+            const originalMaterialsForChild = originalMaterials.current.get(child)
+            if (originalMaterialsForChild) {
+              child.material = Array.isArray(child.material) 
+                ? originalMaterialsForChild.map(m => m.clone())
+                : originalMaterialsForChild[0].clone()
+              const restoredMaterials = Array.isArray(child.material) ? child.material : [child.material]
+              restoredMaterials.forEach((mat) => {
+                if (mat) {
+                  mat.needsUpdate = true
+                }
+              })
+            }
+          }
+        }
+      })
+    })
+  }, [checkedItems])
+
+  // Apply darker material to engine buttons (button20, button21) when their engines are affected
+  useEffect(() => {
+    // Check if engine1 is affected by vibration or smoke
+    const engine1Affected = vibrationAffectedEngines.includes('engine1') || smokeAffectedEngines.includes('engine1')
+    
+    // Check if engine2 is affected by vibration or smoke
+    const engine2Affected = vibrationAffectedEngines.includes('engine2') || smokeAffectedEngines.includes('engine2')
+
+    // Apply darker material to button20 if engine1 is affected
+    if (button20Ref.current) {
+      button20Ref.current.traverse((child) => {
+        if (child.isMesh && child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material]
+          
+          if (engine1Affected) {
+            // Apply darker material when engine is affected
+            const darkerMaterials = materials.map(mat => {
+              const darker = mat.clone()
+              if (darker.color) {
+                darker.color.multiplyScalar(0.3) // Make it 30% of original brightness (same as warning buttons)
+              }
+              // Set roughness to 100% (or smoothness to 0%)
+              if (darker.roughness !== undefined) {
+                darker.roughness = 1.0
+              }
+              if (darker.metalness !== undefined) {
+                darker.metalness = 0.0 // Also set metalness to 0 for matte appearance
+              }
+              darker.needsUpdate = true
+              return darker
+            })
+            child.material = Array.isArray(child.material) ? darkerMaterials : darkerMaterials[0]
+          } else {
+            // Restore original materials when engine is not affected
+            const originalMaterialsForChild = originalMaterialsButton20Ref.current.get(child)
+            if (originalMaterialsForChild) {
+              child.material = Array.isArray(child.material) 
+                ? originalMaterialsForChild.map(m => m.clone())
+                : originalMaterialsForChild[0].clone()
+              const restoredMaterials = Array.isArray(child.material) ? child.material : [child.material]
+              restoredMaterials.forEach((mat) => {
+                if (mat) {
+                  mat.needsUpdate = true
+                }
+              })
+            }
+          }
+        }
+      })
+    }
+
+    // Apply darker material to button21 if engine2 is affected
+    if (button21Ref.current) {
+      button21Ref.current.traverse((child) => {
+        if (child.isMesh && child.material) {
+          const materials = Array.isArray(child.material) ? child.material : [child.material]
+          
+          if (engine2Affected) {
+            // Apply darker material when engine is affected
+            const darkerMaterials = materials.map(mat => {
+              const darker = mat.clone()
+              if (darker.color) {
+                darker.color.multiplyScalar(0.3) // Make it 30% of original brightness (same as warning buttons)
+              }
+              // Set roughness to 100% (or smoothness to 0%)
+              if (darker.roughness !== undefined) {
+                darker.roughness = 1.0
+              }
+              if (darker.metalness !== undefined) {
+                darker.metalness = 0.0 // Also set metalness to 0 for matte appearance
+              }
+              darker.needsUpdate = true
+              return darker
+            })
+            child.material = Array.isArray(child.material) ? darkerMaterials : darkerMaterials[0]
+          } else {
+            // Restore original materials when engine is not affected
+            const originalMaterialsForChild = originalMaterialsButton21Ref.current.get(child)
+            if (originalMaterialsForChild) {
+              child.material = Array.isArray(child.material) 
+                ? originalMaterialsForChild.map(m => m.clone())
+                : originalMaterialsForChild[0].clone()
+              const restoredMaterials = Array.isArray(child.material) ? child.material : [child.material]
+              restoredMaterials.forEach((mat) => {
+                if (mat) {
+                  mat.needsUpdate = true
+                }
+              })
+            }
+          }
+        }
+      })
+    }
+  }, [vibrationAffectedEngines, smokeAffectedEngines])
 
   // Apply highlight effect for monitorscreen06 and monitorscreen02 (dark color on hover)
   // button20 and button21 don't change material on hover - they show text instead
@@ -1065,16 +1338,21 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
   const hasVibration = vibrationAffectedEngines.length > 0
   const basePositionRef = useRef(new THREE.Vector3(...position))
   const vibrationStartTimeRef = useRef(null)
+  const vibrationStopTimeRef = useRef(null)
   const rampUpDuration = 2.0 // Time in seconds to reach full intensity
+  const fadeOutDuration = 2.0 // Time in seconds to fade out completely
   
-  // Track when vibration starts
+  // Track when vibration starts and stops
   useEffect(() => {
     if (hasVibration && vibrationStartTimeRef.current === null) {
       // Vibration just started - record the start time
       vibrationStartTimeRef.current = Date.now()
-    } else if (!hasVibration) {
-      // Vibration stopped - reset start time
-      vibrationStartTimeRef.current = null
+      vibrationStopTimeRef.current = null // Clear stop time when starting
+    } else if (!hasVibration && vibrationStartTimeRef.current !== null) {
+      // Vibration just stopped - record the stop time for fade-out
+      if (vibrationStopTimeRef.current === null) {
+        vibrationStopTimeRef.current = Date.now()
+      }
     }
   }, [hasVibration])
   
@@ -1089,38 +1367,67 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
   }, [position, hasVibration])
   
   useFrame((state, delta) => {
-    if (groupRef.current && hasVibration) {
-      // Calculate ramp-up factor (0 to 1)
-      let rampUpFactor = 1.0
-      if (vibrationStartTimeRef.current !== null) {
-        const elapsed = (Date.now() - vibrationStartTimeRef.current) / 1000 // Convert to seconds
-        const progress = Math.min(elapsed / rampUpDuration, 1.0) // Clamp to 1.0
+    if (groupRef.current) {
+      // Check if we're in fade-out phase (vibration stopped but fade-out not complete)
+      const isFadingOut = !hasVibration && vibrationStopTimeRef.current !== null
+      const isActive = hasVibration || isFadingOut
+      
+      if (isActive) {
+        // Calculate ramp-up factor (0 to 1) when starting
+        let rampUpFactor = 1.0
+        if (hasVibration && vibrationStartTimeRef.current !== null) {
+          const elapsed = (Date.now() - vibrationStartTimeRef.current) / 1000 // Convert to seconds
+          const progress = Math.min(elapsed / rampUpDuration, 1.0) // Clamp to 1.0
+          
+          // Use ease-in-out curve for smooth ramp-up
+          rampUpFactor = progress < 0.5
+            ? 2 * progress * progress
+            : 1 - Math.pow(-2 * progress + 2, 2) / 2
+        }
         
-        // Use ease-in-out curve for smooth ramp-up
-        rampUpFactor = progress < 0.5
-          ? 2 * progress * progress
-          : 1 - Math.pow(-2 * progress + 2, 2) / 2
+        // Calculate fade-out factor (1 to 0) when stopping
+        let fadeOutFactor = 1.0
+        if (isFadingOut && vibrationStopTimeRef.current !== null) {
+          const elapsed = (Date.now() - vibrationStopTimeRef.current) / 1000 // Convert to seconds
+          const progress = Math.min(elapsed / fadeOutDuration, 1.0) // Clamp to 1.0
+          
+          // Use ease-in-out curve for smooth fade-out
+          fadeOutFactor = progress < 0.5
+            ? 1 - 2 * progress * progress
+            : Math.pow(-2 * progress + 2, 2) / 2
+          
+          // If fade-out is complete, reset everything
+          if (progress >= 1.0) {
+            vibrationStartTimeRef.current = null
+            vibrationStopTimeRef.current = null
+            groupRef.current.position.copy(basePositionRef.current)
+            return
+          }
+        }
+        
+        // Combine ramp-up and fade-out factors
+        const intensityFactor = rampUpFactor * fadeOutFactor
+        
+        // Create a shaking effect with random small offsets
+        const maxIntensity = 0.005 // Maximum vibration intensity (reduced for subtler effect)
+        const intensity = maxIntensity * intensityFactor // Apply both factors
+        const time = state.clock.elapsedTime
+        
+        // Use multiple sine waves at different frequencies for more realistic vibration
+        const offsetX = (Math.sin(time * 50) + Math.sin(time * 73) * 0.5) * intensity
+        const offsetY = (Math.cos(time * 43) + Math.cos(time * 67) * 0.5) * intensity
+        const offsetZ = (Math.sin(time * 37) + Math.sin(time * 59) * 0.5) * intensity
+        
+        // Apply vibration offset to the group's position
+        groupRef.current.position.set(
+          basePositionRef.current.x + offsetX,
+          basePositionRef.current.y + offsetY,
+          basePositionRef.current.z + offsetZ
+        )
+      } else {
+        // No vibration and not fading out - ensure position is reset
+        groupRef.current.position.copy(basePositionRef.current)
       }
-      
-      // Create a shaking effect with random small offsets
-      const maxIntensity = 0.005 // Maximum vibration intensity (reduced for subtler effect)
-      const intensity = maxIntensity * rampUpFactor // Apply ramp-up factor
-      const time = state.clock.elapsedTime
-      
-      // Use multiple sine waves at different frequencies for more realistic vibration
-      const offsetX = (Math.sin(time * 50) + Math.sin(time * 73) * 0.5) * intensity
-      const offsetY = (Math.cos(time * 43) + Math.cos(time * 67) * 0.5) * intensity
-      const offsetZ = (Math.sin(time * 37) + Math.sin(time * 59) * 0.5) * intensity
-      
-      // Apply vibration offset to the group's position
-      groupRef.current.position.set(
-        basePositionRef.current.x + offsetX,
-        basePositionRef.current.y + offsetY,
-        basePositionRef.current.z + offsetZ
-      )
-    } else if (groupRef.current && !hasVibration) {
-      // Reset to original position when vibration stops
-      groupRef.current.position.copy(basePositionRef.current)
     }
   })
 
@@ -1132,14 +1439,21 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
     const mousePos = mousePositionRef.current
     raycaster.setFromCamera(mousePos, camera)
 
-    // Check monitorscreen06, monitorscreen02, button20, and button21
+    // Check monitorscreen06, monitorscreen02, button20, button21, and other buttons
     // Skip monitorscreen02 if in close-up for monitorscreen02 (no hover interaction)
     // Skip monitorscreen06 if in close-up for monitorscreen06 (no hover interaction)
     const elementsToCheck = [
       ...(isCloseUp && closeUpMonitor === 'monitorscreen06' ? [] : [{ ref: monitorscreen06Ref, name: 'monitorscreen06' }]),
       ...(isCloseUp && closeUpMonitor === 'monitorscreen02' ? [] : [{ ref: monitorscreen02Ref, name: 'monitorscreen02' }]),
       { ref: button20Ref, name: 'button20' },
-      { ref: button21Ref, name: 'button21' }
+      { ref: button21Ref, name: 'button21' },
+      { ref: button18Ref, name: 'button18' },
+      { ref: button27Ref, name: 'button27' },
+      { ref: button28Ref, name: 'button28' },
+      { ref: butotn28Ref, name: 'butotn28' },
+      { ref: button29Ref, name: 'button29' },
+      { ref: button31Ref, name: 'button31' },
+      { ref: button32Ref, name: 'button32' }
     ]
 
     let foundIntersection = null
@@ -1193,7 +1507,9 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
         // Notify parent component about button hover
         if (onButtonHover) {
           // Clear previous hover if it was a button or monitor
-          if (previousHovered === button20Ref.current || previousHovered === button21Ref.current || previousHovered === monitorscreen02Ref.current || previousHovered === monitorscreen06Ref.current) {
+          if (previousHovered === button20Ref.current || previousHovered === button21Ref.current || previousHovered === monitorscreen02Ref.current || previousHovered === monitorscreen06Ref.current ||
+              previousHovered === button18Ref.current || previousHovered === button27Ref.current || previousHovered === button28Ref.current ||
+              previousHovered === butotn28Ref.current || previousHovered === button29Ref.current || previousHovered === button31Ref.current || previousHovered === button32Ref.current) {
             onButtonHover(null)
           }
           // Set new button/monitor hover
@@ -1207,6 +1523,20 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
           } else if (foundIntersection === monitorscreen06Ref.current) {
             // monitorscreen06 hover (only when not in close-up)
             onButtonHover('monitorscreen06')
+          } else if (foundIntersection === button18Ref.current) {
+            onButtonHover('button18')
+          } else if (foundIntersection === button27Ref.current) {
+            onButtonHover('button27')
+          } else if (foundIntersection === button28Ref.current) {
+            onButtonHover('button28')
+          } else if (foundIntersection === butotn28Ref.current) {
+            onButtonHover('butotn28')
+          } else if (foundIntersection === button29Ref.current) {
+            onButtonHover('button29')
+          } else if (foundIntersection === button31Ref.current) {
+            onButtonHover('button31')
+          } else if (foundIntersection === button32Ref.current) {
+            onButtonHover('button32')
           } else {
             onButtonHover(null)
           }
@@ -1214,7 +1544,9 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
       }
     } else {
       if (hoveredElement) {
-        const wasButtonOrMonitor = hoveredElement === button20Ref.current || hoveredElement === button21Ref.current || hoveredElement === monitorscreen02Ref.current || hoveredElement === monitorscreen06Ref.current
+        const wasButtonOrMonitor = hoveredElement === button20Ref.current || hoveredElement === button21Ref.current || hoveredElement === monitorscreen02Ref.current || hoveredElement === monitorscreen06Ref.current ||
+            hoveredElement === button18Ref.current || hoveredElement === button27Ref.current || hoveredElement === button28Ref.current ||
+            hoveredElement === butotn28Ref.current || hoveredElement === button29Ref.current || hoveredElement === button31Ref.current || hoveredElement === button32Ref.current
         setHoveredElement(null)
         gl.domElement.style.cursor = 'default'
         

@@ -275,7 +275,7 @@ export default function Page2() {
   useEffect(() => {
     if (sessionReady && !countdownStartedRef.current) {
       countdownStartedRef.current = true
-      setCountdown(2)
+      setCountdown(8)
       
       const timeout = setTimeout(() => {
         // Countdown finished - check ENG in note 2
@@ -339,7 +339,7 @@ export default function Page2() {
         }
         
         setCountdown(null)
-      }, 2000)
+      }, 8000)
       
       return () => {
         clearTimeout(timeout)
@@ -372,6 +372,7 @@ export default function Page2() {
   }, [hasEverHadEffects])
 
   // Sync note 5 checkboxes (smoke/vibration) with actual engine states
+  // But also allow checkbox to control smoke (bidirectional sync)
   useEffect(() => {
     const hasSmoke = smokeAffectedEngines.length > 0
     const hasVibration = vibrationAffectedEngines.length > 0
@@ -380,9 +381,13 @@ export default function Page2() {
       const updatedItems = { ...prevItems }
       
       // Update smoke checkbox based on actual engine state
+      // Only check if smoke is currently active (engines are on and producing smoke)
       if (hasSmoke) {
+        // If smoke is active, ensure checkbox is checked
         updatedItems['Sensory cues-0'] = true // Presence of Smoke
       } else {
+        // If smoke is not active (engines are off), uncheck the checkbox
+        // This prevents smoke from reappearing when engines are off
         delete updatedItems['Sensory cues-0']
       }
       
@@ -395,7 +400,7 @@ export default function Page2() {
       
       return updatedItems
     })
-  }, [smokeAffectedEngines, vibrationAffectedEngines])
+  }, [smokeAffectedEngines, vibrationAffectedEngines, originalSmokeAffected, turnedOffEngines])
 
   // Sync note 2 ENG checkbox with engine states
   useEffect(() => {
@@ -427,7 +432,12 @@ export default function Page2() {
 
     // If ENG is checked but no effects were ever applied, randomly select effects every 3 seconds
     // Once effects are applied (even if removed later), stop random selection
-    if (engChecked && !hasEverHadEffects && !hasAnyEffects && sessionReady) {
+    // Also check that at least one engine is on (don't trigger effects if all engines are off)
+    const allEngines = ['engine1', 'engine2']
+    const allEnginesOff = allEngines.every(e => turnedOffEngines.includes(e))
+    const atLeastOneEngineOn = !allEnginesOff
+    
+    if (engChecked && !hasEverHadEffects && !hasAnyEffects && sessionReady && atLeastOneEngineOn) {
       const interval = setInterval(() => {
         // Check if effects were ever applied (using ref to get latest value)
         if (hasEverHadEffectsRef.current) {
@@ -442,6 +452,11 @@ export default function Page2() {
         if (currentHasSmoke || currentHasVibration) {
           return
         }
+        
+        // Don't add effects if all engines are turned off
+        // Check turnedOffEngines by checking if smoke/vibration arrays are empty
+        // and if we have any turned off engines, don't add new effects
+        // (This is a safeguard - the outer condition already checks atLeastOneEngineOn)
 
         // Randomly check items in note 5
         const note5Items = ['Presence of Smoke', 'Vibration']
@@ -489,7 +504,7 @@ export default function Page2() {
 
       return () => clearInterval(interval)
     }
-  }, [checkedItems, smokeAffectedEngines, vibrationAffectedEngines, sessionReady, hasEverHadEffects])
+  }, [checkedItems, smokeAffectedEngines, vibrationAffectedEngines, sessionReady, hasEverHadEffects, turnedOffEngines])
 
   return (
     <main
@@ -622,6 +637,7 @@ export default function Page2() {
             enablePointerEvents={true}
             enableShader={shaderEnabled}
             smokeAffectedEngines={smokeAffectedEngines}
+            turnedOffEngines={turnedOffEngines}
           >
             <Cockpit 
               position={[0, 1, 1.2]}
@@ -629,6 +645,7 @@ export default function Page2() {
               scale={0.75}
               onButtonHover={setHoveredButton}
               vibrationAffectedEngines={vibrationAffectedEngines}
+              smokeAffectedEngines={smokeAffectedEngines}
               onCloseUpMonitorChange={setCloseUpMonitor}
               onExitComms={(exitFn) => { exitCommsRef.current = exitFn }}
               onExitNavigation={(exitFn) => { exitNavigationRef.current = exitFn }}
@@ -642,6 +659,7 @@ export default function Page2() {
                 speed
               }}
               formatCoordinates={formatCoordinates}
+              checkedItems={checkedItems}
             />
           </Scene>
           </GizmoModeContext.Provider>
@@ -779,7 +797,17 @@ export default function Page2() {
             pointerEvents: 'none',
           }}
         >
-          {hoveredButton === 'button20' ? 'Engine 1' : hoveredButton === 'button21' ? 'Engine 2' : hoveredButton === 'monitorscreen02' ? 'Communication' : hoveredButton === 'monitorscreen06' ? 'Navigation Instruments' : ''}
+          {hoveredButton === 'button20' ? 'Engine 1' : 
+           hoveredButton === 'button21' ? 'Engine 2' : 
+           hoveredButton === 'monitorscreen02' ? 'Communication' : 
+           hoveredButton === 'monitorscreen06' ? 'Navigation Instruments' :
+           hoveredButton === 'button18' ? 'ANTI ICE' :
+           hoveredButton === 'button27' ? 'ENG' :
+           hoveredButton === 'button28' ? 'ANTI ICE' :
+           hoveredButton === 'butotn28' ? 'HYD' :
+           hoveredButton === 'button31' ? 'OVERHEAD' :
+           hoveredButton === 'button32' ? 'DOORS' :
+           hoveredButton === 'button29' ? 'AIR COND' : ''}
         </div>
       )}
 
@@ -903,7 +931,8 @@ export default function Page2() {
                 const wasSmokeAffected = originalSmokeAffected.includes(engine)
                 const wasVibrationAffected = originalVibrationAffected.includes(engine)
                 
-                // If smoke was the original effect, always restore it (smoke cannot be removed by restarting)
+                // If smoke was the original effect, always restore it when engine is turned back on
+                // (checkbox will be checked automatically by the sync logic)
                 if (wasSmokeAffected) {
                   setSmokeAffectedEngines((prev) => {
                     if (!prev.includes(engine)) {
@@ -940,8 +969,10 @@ export default function Page2() {
                 // Check if this engine had vibration before removing it
                 const hadVibration = vibrationAffectedEngines.includes(engine)
                 
-                // Remove all effects (checkboxes will be synced by useEffect)
+                // Remove smoke from active list - this will trigger fade-out in Smoke component
                 setSmokeAffectedEngines((prev) => prev.filter((e) => e !== engine))
+                
+                // Remove vibration immediately
                 setVibrationAffectedEngines((prev) => prev.filter((e) => e !== engine))
               }
             }

@@ -34,18 +34,69 @@ function SmokePuff({ position, scale, material }) {
 export default function Smoke({ enabled = false }) {
   const groupRef = useRef()
   const smokeStartTimeRef = useRef(null)
-  const fadeInDuration = 8 // seconds to fully fade in
+  const smokeStopTimeRef = useRef(null)
+  const previousEnabledRef = useRef(enabled)
+  const lastFadeOutStartRef = useRef(null) // Track when fade-out last started
+  const fadeInDuration = 30 // seconds to fully fade in (increased for slower appearance)
+  const fadeOutDuration = 10 // seconds to fully fade out (faster dissipation)
+  const minTimeBetweenFadeOutAndFadeIn = 0.5 // Minimum seconds between fade-out start and fade-in start
   const maxOpacity = 0.85
   const baseScale = 1.0
 
-  // Track when smoke becomes enabled
+  // Track when smoke becomes enabled and disabled
   useEffect(() => {
-    if (enabled && smokeStartTimeRef.current === null) {
-      smokeStartTimeRef.current = Date.now()
-    } else if (!enabled) {
-      smokeStartTimeRef.current = null
+    const wasEnabled = previousEnabledRef.current
+    previousEnabledRef.current = enabled
+    
+    if (enabled && !wasEnabled) {
+      // Smoke just became enabled - start fade-in
+      // Only start fade-in if not currently fading out, or if fade-out is complete
+      const now = Date.now()
+      const timeSinceStop = smokeStopTimeRef.current !== null 
+        ? (now - smokeStopTimeRef.current) / 1000 
+        : Infinity
+      const timeSinceLastFadeOut = lastFadeOutStartRef.current !== null
+        ? (now - lastFadeOutStartRef.current) / 1000
+        : Infinity
+      
+      // Only start fade-in if:
+      // 1. Fade-out is complete (has been running for at least fadeOutDuration), OR
+      // 2. No fade-out was in progress, AND enough time has passed since last fade-out start
+      // This prevents new smoke from appearing immediately after fade-out starts
+      const canStartFadeIn = (smokeStopTimeRef.current === null || timeSinceStop >= fadeOutDuration) &&
+                              (timeSinceLastFadeOut >= minTimeBetweenFadeOutAndFadeIn)
+      
+      if (canStartFadeIn) {
+        // Fade-out is complete or not in progress - start fade-in
+        smokeStartTimeRef.current = now
+        smokeStopTimeRef.current = null // Clear stop time when starting
+        lastFadeOutStartRef.current = null // Clear last fade-out start time
+      }
+      // If fade-out is still in progress or too soon after fade-out start, don't start fade-in
+      // This prevents the "double smoke" effect where new smoke appears during fade-out
+    } else if (!enabled && wasEnabled) {
+      // Smoke just became disabled - start fade-out
+      // Always start fade-out if smoke was enabled
+      if (smokeStopTimeRef.current === null) {
+        const now = Date.now()
+        smokeStopTimeRef.current = now
+        lastFadeOutStartRef.current = now // Track when fade-out started
+        // If smoke was never properly started, assume it was fully faded in for fade-out calculation
+        if (smokeStartTimeRef.current === null) {
+          smokeStartTimeRef.current = now - (fadeInDuration * 1000)
+        }
+      }
+    } else if (!enabled && !wasEnabled && smokeStartTimeRef.current === null && smokeStopTimeRef.current === null) {
+      // Smoke is disabled and was never started - ensure everything is reset
+      if (groupRef.current) {
+        groupRef.current.scale.set(1, 1, 1)
+        if (smokeMaterial) {
+          smokeMaterial.opacity = 0
+          smokeMaterial.needsUpdate = true
+        }
+      }
     }
-  }, [enabled])
+  }, [enabled, fadeOutDuration, fadeInDuration])
 
   // Create shared smoke material - dark gray/black with transparency
   const smokeMaterial = useMemo(
@@ -108,68 +159,151 @@ export default function Smoke({ enabled = false }) {
   ]
 
   // Slow drift and billow animation - smoke moves and expands slowly
-  // Also handles gradual fade-in and intensity increase
+  // Also handles gradual fade-in, fade-out, and intensity changes
   useFrame((state, delta) => {
-    if (groupRef.current && enabled && smokeStartTimeRef.current !== null) {
-      // Calculate fade-in progress (0 to 1)
-      const elapsed = (Date.now() - smokeStartTimeRef.current) / 1000 // seconds
-      const fadeProgress = Math.min(elapsed / fadeInDuration, 1)
+    if (groupRef.current) {
+      // Check if we're in fade-out phase (smoke disabled but fade-out not complete)
+      const isFadingOut = !enabled && smokeStopTimeRef.current !== null
+      // Only treat as active if enabled OR actively fading out
+      // Don't use previousEnabledRef here to avoid race conditions
+      const isActive = enabled || isFadingOut
       
-      // Gradually increase opacity using easing function (ease-out)
-      const easedProgress = 1 - Math.pow(1 - fadeProgress, 3) // Cubic ease-out
-      const currentOpacity = easedProgress * maxOpacity
+      // Don't allow re-enabling during fade-out - let fade-out complete first
+      // This prevents the "double smoke" effect
       
-      // Update material opacity - update all meshes in the group
-      if (smokeMaterial) {
-        smokeMaterial.opacity = currentOpacity
-        smokeMaterial.needsUpdate = true
-      }
-      
-      // Also update any cloned materials in the scene
-      groupRef.current.traverse((child) => {
-        if (child.isMesh && child.material) {
-          const materials = Array.isArray(child.material) ? child.material : [child.material]
-          materials.forEach((mat) => {
-            if (mat && mat.transparent !== undefined) {
-              mat.opacity = currentOpacity
-              mat.needsUpdate = true
+      if (isActive) {
+        // Calculate fade-in progress (0 to 1) when starting
+        let fadeInProgress = 0.0
+        if (enabled) {
+          if (smokeStartTimeRef.current === null) {
+            // Start time not set yet - initialize it
+            smokeStartTimeRef.current = Date.now()
+            fadeInProgress = 0.0
+          } else {
+            const elapsed = (Date.now() - smokeStartTimeRef.current) / 1000 // seconds
+            fadeInProgress = Math.min(elapsed / fadeInDuration, 1)
+          }
+        } else if (isFadingOut) {
+          // If fading out, assume we were fully faded in
+          fadeInProgress = 1.0
+        }
+        
+        // Gradually increase opacity using easing function (ease-out) for fade-in
+        const easedFadeIn = 1 - Math.pow(1 - fadeInProgress, 3) // Cubic ease-out
+        
+        // Calculate fade-out progress (1 to 0) when stopping
+        let fadeOutProgress = 1.0
+        if (isFadingOut && smokeStopTimeRef.current !== null) {
+          const elapsed = (Date.now() - smokeStopTimeRef.current) / 1000 // seconds
+          const fadeOutProgressRaw = Math.min(elapsed / fadeOutDuration, 1)
+          
+          // Use ease-in curve for fade-out (inverse of fade-in)
+          // fadeOutProgressRaw goes from 0 to 1, we want fadeOutProgress to go from 1 to 0
+          const easedFadeOutRaw = Math.pow(fadeOutProgressRaw, 3) // Cubic ease-in
+          fadeOutProgress = 1 - easedFadeOutRaw // Invert to go from 1 to 0
+          
+          // If fade-out is complete, reset everything
+          if (elapsed >= fadeOutDuration) {
+            smokeStartTimeRef.current = null
+            smokeStopTimeRef.current = null
+            groupRef.current.scale.set(1, 1, 1)
+            if (smokeMaterial) {
+              smokeMaterial.opacity = 0
+              smokeMaterial.needsUpdate = true
+            }
+            // Reset all cloned materials
+            groupRef.current.traverse((child) => {
+              if (child.isMesh && child.material) {
+                const materials = Array.isArray(child.material) ? child.material : [child.material]
+                materials.forEach((mat) => {
+                  if (mat && mat.transparent !== undefined) {
+                    mat.opacity = 0
+                    mat.needsUpdate = true
+                  }
+                })
+              }
+            })
+            return
+          }
+        }
+        
+        // Combine fade-in and fade-out factors
+        const opacityFactor = easedFadeIn * fadeOutProgress
+        const currentOpacity = opacityFactor * maxOpacity
+        
+        // Update material opacity - update all meshes in the group
+        if (smokeMaterial) {
+          smokeMaterial.opacity = currentOpacity
+          smokeMaterial.needsUpdate = true
+        }
+        
+        // Also update any cloned materials in the scene
+        groupRef.current.traverse((child) => {
+          if (child.isMesh && child.material) {
+            const materials = Array.isArray(child.material) ? child.material : [child.material]
+            materials.forEach((mat) => {
+              if (mat && mat.transparent !== undefined) {
+                mat.opacity = currentOpacity
+                mat.needsUpdate = true
+              }
+            })
+          }
+        })
+        
+        // Gradually increase/decrease scale intensity (smoke gets denser/lighter over time)
+        const scaleMultiplier = baseScale + (opacityFactor * 0.3) // Scale up to 30% larger based on opacity
+        groupRef.current.scale.set(scaleMultiplier, scaleMultiplier, scaleMultiplier)
+        
+        // Very slow forward movement to simulate plane/smoke movement
+        groupRef.current.position.z += delta * 0.03
+        // Reset position when smoke moves too far forward
+        if (groupRef.current.position.z > 5) {
+          groupRef.current.position.z = -5
+        }
+        
+        // Subtle vertical drift for billowing effect
+        groupRef.current.position.y += Math.sin(state.clock.elapsedTime * 0.5) * delta * 0.02
+      } else {
+        // No smoke and not fading out - only reset if fade-out has completed
+        // Don't reset if we're in the middle of a fade-out (smokeStopTimeRef is set)
+        // Also don't reset if we just became disabled (give useEffect time to set smokeStopTimeRef)
+        const timeSinceStop = smokeStopTimeRef.current !== null 
+          ? (Date.now() - smokeStopTimeRef.current) / 1000 
+          : Infinity
+        
+        // Only reset if fade-out is complete (has been running for at least fadeOutDuration)
+        // OR if smoke was never enabled (smokeStartTimeRef is null and smokeStopTimeRef is null)
+        const wasNeverEnabled = smokeStartTimeRef.current === null && smokeStopTimeRef.current === null
+        const fadeOutComplete = smokeStopTimeRef.current !== null && timeSinceStop >= fadeOutDuration
+        
+        if (wasNeverEnabled || fadeOutComplete) {
+          // Fade-out is complete or never started - reset everything
+          groupRef.current.scale.set(1, 1, 1)
+          if (smokeMaterial) {
+            smokeMaterial.opacity = 0
+            smokeMaterial.needsUpdate = true
+          }
+          // Reset all cloned materials
+          groupRef.current.traverse((child) => {
+            if (child.isMesh && child.material) {
+              const materials = Array.isArray(child.material) ? child.material : [child.material]
+              materials.forEach((mat) => {
+                if (mat && mat.transparent !== undefined) {
+                  mat.opacity = 0
+                  mat.needsUpdate = true
+                }
+              })
             }
           })
+          // Clear refs after reset
+          if (fadeOutComplete) {
+            smokeStartTimeRef.current = null
+            smokeStopTimeRef.current = null
+          }
         }
-      })
-      
-      // Gradually increase scale intensity (smoke gets denser over time)
-      const scaleMultiplier = baseScale + (easedProgress * 0.3) // Scale up to 30% larger
-      groupRef.current.scale.set(scaleMultiplier, scaleMultiplier, scaleMultiplier)
-      
-      // Very slow forward movement to simulate plane/smoke movement
-      groupRef.current.position.z += delta * 0.03
-      // Reset position when smoke moves too far forward
-      if (groupRef.current.position.z > 5) {
-        groupRef.current.position.z = -5
+        // If we just became disabled but fade-out hasn't started yet, don't reset
+        // The useEffect will set smokeStopTimeRef, and then isActive will become true
       }
-      
-      // Subtle vertical drift for billowing effect
-      groupRef.current.position.y += Math.sin(state.clock.elapsedTime * 0.5) * delta * 0.02
-    } else if (groupRef.current && !enabled) {
-      // Reset scale and opacity when disabled
-      groupRef.current.scale.set(1, 1, 1)
-      if (smokeMaterial) {
-        smokeMaterial.opacity = 0
-        smokeMaterial.needsUpdate = true
-      }
-      // Also reset all cloned materials
-      groupRef.current.traverse((child) => {
-        if (child.isMesh && child.material) {
-          const materials = Array.isArray(child.material) ? child.material : [child.material]
-          materials.forEach((mat) => {
-            if (mat && mat.transparent !== undefined) {
-              mat.opacity = 0
-              mat.needsUpdate = true
-            }
-          })
-        }
-      })
     }
   })
 
