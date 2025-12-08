@@ -8,7 +8,7 @@ import { GizmoModeContext } from './Scene'
 import { createRoot } from 'react-dom/client'
 import html2canvas from 'html2canvas'
 
-export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], scale = 1, onButtonHover = null, vibrationAffectedEngines = [], smokeAffectedEngines = [], onCloseUpMonitorChange = null, chatComponent = null, onExitComms = null, onExitNavigation = null, navigationData = null, formatCoordinates = null, checkedItems = {} }) {
+export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], scale = 1, onButtonHover = null, vibrationAffectedEngines = [], smokeAffectedEngines = [], onCloseUpMonitorChange = null, chatComponent = null, onExitComms = null, onExitNavigation = null, navigationData = null, formatCoordinates = null, checkedItems = {}, onEngine1SwitchToggle = null, onEngine1SwitchChange = null, onEngine2SwitchToggle = null, onEngine2SwitchChange = null }) {
   const { scene } = useGLTF('/lambda_cockpit_version_1.glb')
   const groupRef = useRef()
   const { raycaster, gl, camera, size, controls } = useThree()
@@ -16,6 +16,8 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
   const [hoveredElement, setHoveredElement] = useState(null)
   const [isCloseUp, setIsCloseUp] = useState(false)
   const [closeUpMonitor, setCloseUpMonitor] = useState(null) // 'monitorscreen06' or 'monitorscreen02' or null
+  const [engine1SwitchOn, setEngine1SwitchOn] = useState(false) // Track engine 1 switch state
+  const [engine2SwitchOn, setEngine2SwitchOn] = useState(false) // Track engine 2 switch state
   const monitorscreen06Ref = useRef(null)
   const monitorscreen02Ref = useRef(null)
   const button20Ref = useRef(null)
@@ -27,6 +29,12 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
   const button29Ref = useRef(null)
   const button31Ref = useRef(null)
   const button32Ref = useRef(null)
+  const handle01Ref = useRef(null)
+  const handlebase02Ref = useRef(null)
+  const engine1SwitchGroupRef = useRef(null)
+  const handle02Ref = useRef(null)
+  const handlebase01Ref = useRef(null)
+  const engine2SwitchGroupRef = useRef(null)
   const originalMaterialsRef = useRef(new Map())
   const originalMaterials02Ref = useRef(new Map())
   const originalMaterialsButton20Ref = useRef(new Map())
@@ -84,6 +92,26 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
       onExitComms(exitComms)
     }
   }, [onExitComms, closeUpMonitor, camera, controls, onCloseUpMonitorChange, setContextIsCloseUp])
+
+  // Expose engine 1 switch toggle function to parent via callback
+  useEffect(() => {
+    if (onEngine1SwitchToggle) {
+      const toggleEngine1Switch = () => {
+        setEngine1SwitchOn(prev => !prev)
+      }
+      onEngine1SwitchToggle(toggleEngine1Switch)
+    }
+  }, [onEngine1SwitchToggle])
+
+  // Expose engine 2 switch toggle function to parent via callback
+  useEffect(() => {
+    if (onEngine2SwitchToggle) {
+      const toggleEngine2Switch = () => {
+        setEngine2SwitchOn(prev => !prev)
+      }
+      onEngine2SwitchToggle(toggleEngine2Switch)
+    }
+  }, [onEngine2SwitchToggle])
 
   // Expose exitNavigation function to parent via callback
   useEffect(() => {
@@ -152,6 +180,88 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
       // Check if click is over the canvas
       const isOverCanvas = event.clientX >= rect.left && event.clientX <= rect.right &&
           event.clientY >= rect.top && event.clientY <= rect.bottom
+      
+      // Check for engine 1 switch click
+      if (isOverCanvas && engine1SwitchGroupRef.current && handle01Ref.current && handlebase02Ref.current) {
+        raycaster.setFromCamera({ x, y }, camera)
+        
+        const meshes = []
+        handle01Ref.current.traverse((child) => {
+          if (child.isMesh) {
+            child.updateMatrixWorld(true)
+            meshes.push(child)
+          }
+        })
+        handlebase02Ref.current.traverse((child) => {
+          if (child.isMesh) {
+            child.updateMatrixWorld(true)
+            meshes.push(child)
+          }
+        })
+        
+        const intersects = raycaster.intersectObjects(meshes, true)
+        
+        if (intersects.length > 0) {
+          // Check if it's one of the engine switch meshes
+          let current = intersects[0].object
+          let isEngineSwitch = false
+          while (current) {
+            if (current === handle01Ref.current || current === handlebase02Ref.current) {
+              isEngineSwitch = true
+              break
+            }
+            if (current === scene || !current.parent) break
+            current = current.parent
+          }
+          
+          if (isEngineSwitch) {
+            // Toggle engine switch position
+            setEngine1SwitchOn(prev => !prev)
+            return // Prevent other click handlers from firing
+          }
+        }
+      }
+
+      // Check for engine 2 switch click
+      if (isOverCanvas && engine2SwitchGroupRef.current && handle02Ref.current && handlebase01Ref.current) {
+        raycaster.setFromCamera({ x, y }, camera)
+        
+        const meshes = []
+        handle02Ref.current.traverse((child) => {
+          if (child.isMesh) {
+            child.updateMatrixWorld(true)
+            meshes.push(child)
+          }
+        })
+        handlebase01Ref.current.traverse((child) => {
+          if (child.isMesh) {
+            child.updateMatrixWorld(true)
+            meshes.push(child)
+          }
+        })
+        
+        const intersects = raycaster.intersectObjects(meshes, true)
+        
+        if (intersects.length > 0) {
+          // Check if it's one of the engine switch meshes
+          let current = intersects[0].object
+          let isEngineSwitch = false
+          while (current) {
+            if (current === handle02Ref.current || current === handlebase01Ref.current) {
+              isEngineSwitch = true
+              break
+            }
+            if (current === scene || !current.parent) break
+            current = current.parent
+          }
+          
+          if (isEngineSwitch) {
+            // Toggle engine switch position
+            setEngine2SwitchOn(prev => !prev)
+            return // Prevent other click handlers from firing
+          }
+        }
+      }
       
       if (isOverCanvas && (monitorscreen06Ref.current || monitorscreen02Ref.current)) {
         // Raycast to check if monitorscreen06 or monitorscreen02 was clicked
@@ -863,6 +973,54 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
         }
       })
     }
+
+    // Find handle01 and handlebase02 for Engine 1 Switch
+    // Keep them in their original positions (don't group them to avoid position issues)
+    const handle01 = findElement(scene, 'handle01')
+    const handlebase02 = findElement(scene, 'handlebase02')
+    
+    if (handle01 && handlebase02) {
+      // Update world matrices to ensure we get accurate positions
+      handle01.updateMatrixWorld(true)
+      handlebase02.updateMatrixWorld(true)
+      
+      // Store refs BEFORE storing positions to ensure we're working with the right objects
+      handle01Ref.current = handle01
+      handlebase02Ref.current = handlebase02
+      
+      // Store original local positions for movement animation
+      // Store these immediately after finding the elements to preserve original state
+      handle01.userData.originalPosition = handle01.position.clone()
+      handlebase02.userData.originalPosition = handlebase02.position.clone()
+      
+      // Store a marker object to identify this as the engine switch group
+      // We'll check both meshes individually in raycasting
+      engine1SwitchGroupRef.current = { handle01, handlebase02 }
+    }
+
+    // Find handle02 and handlebase01 for Engine 2 Switch
+    // Keep them in their original positions (don't group them to avoid position issues)
+    const handle02 = findElement(scene, 'handle02')
+    const handlebase01 = findElement(scene, 'handlebase01')
+    
+    if (handle02 && handlebase01) {
+      // Update world matrices to ensure we get accurate positions
+      handle02.updateMatrixWorld(true)
+      handlebase01.updateMatrixWorld(true)
+      
+      // Store refs BEFORE storing positions to ensure we're working with the right objects
+      handle02Ref.current = handle02
+      handlebase01Ref.current = handlebase01
+      
+      // Store original local positions for movement animation
+      // Store these immediately after finding the elements to preserve original state
+      handle02.userData.originalPosition = handle02.position.clone()
+      handlebase01.userData.originalPosition = handlebase01.position.clone()
+      
+      // Store a marker object to identify this as the engine switch group
+      // We'll check both meshes individually in raycasting
+      engine2SwitchGroupRef.current = { handle02, handlebase01 }
+    }
   }, [scene])
 
   // Apply darker material to warning system buttons based on checkedItems
@@ -885,22 +1043,23 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
 
       ref.current.traverse((child) => {
         if (child.isMesh && child.material) {
-          const materials = Array.isArray(child.material) ? child.material : [child.material]
+          const originalMaterialsForChild = originalMaterials.current.get(child)
           
           if (isChecked) {
-            // Apply lighter material when checked
-            const lighterMaterials = materials.map(mat => {
-              const lighter = mat.clone()
-              if (lighter.color) {
-                lighter.color.multiplyScalar(0.7) // Make it 70% of original brightness (lighter)
-              }
-              lighter.needsUpdate = true
-              return lighter
-            })
-            child.material = Array.isArray(child.material) ? lighterMaterials : lighterMaterials[0]
+            // Apply darker material when checked - always use original materials as base
+            if (originalMaterialsForChild) {
+              const darkerMaterials = originalMaterialsForChild.map(mat => {
+                const darker = mat.clone()
+                if (darker.color) {
+                  darker.color.multiplyScalar(0.5) // Make it 50% of original brightness (darker)
+                }
+                darker.needsUpdate = true
+                return darker
+              })
+              child.material = Array.isArray(child.material) ? darkerMaterials : darkerMaterials[0]
+            }
           } else {
             // Restore original materials when unchecked
-            const originalMaterialsForChild = originalMaterials.current.get(child)
             if (originalMaterialsForChild) {
               child.material = Array.isArray(child.material) 
                 ? originalMaterialsForChild.map(m => m.clone())
@@ -930,29 +1089,33 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
     if (button20Ref.current) {
       button20Ref.current.traverse((child) => {
         if (child.isMesh && child.material) {
-          const materials = Array.isArray(child.material) ? child.material : [child.material]
+          const originalMaterialsForChild = originalMaterialsButton20Ref.current.get(child)
           
           if (engine1Affected) {
             // Apply darker material when engine is affected
-            const darkerMaterials = materials.map(mat => {
-              const darker = mat.clone()
-              if (darker.color) {
-                darker.color.multiplyScalar(0.3) // Make it 30% of original brightness (same as warning buttons)
-              }
-              // Set roughness to 100% (or smoothness to 0%)
-              if (darker.roughness !== undefined) {
-                darker.roughness = 1.0
-              }
-              if (darker.metalness !== undefined) {
-                darker.metalness = 0.0 // Also set metalness to 0 for matte appearance
-              }
-              darker.needsUpdate = true
-              return darker
-            })
-            child.material = Array.isArray(child.material) ? darkerMaterials : darkerMaterials[0]
+            // Use stored original materials as base to ensure consistency
+            if (originalMaterialsForChild) {
+              const darkerMaterials = originalMaterialsForChild.map(mat => {
+                const darker = mat.clone()
+                if (darker.color) {
+                  // Apply 0.3 multiplier to the stored original (which is already at 0.7)
+                  // This gives approximately 0.21 of the true original brightness
+                  darker.color.multiplyScalar(0.3 / 0.7) // Adjust to get 30% of true original
+                }
+                // Set roughness to 100% (or smoothness to 0%)
+                if (darker.roughness !== undefined) {
+                  darker.roughness = 1.0
+                }
+                if (darker.metalness !== undefined) {
+                  darker.metalness = 0.0 // Also set metalness to 0 for matte appearance
+                }
+                darker.needsUpdate = true
+                return darker
+              })
+              child.material = Array.isArray(child.material) ? darkerMaterials : darkerMaterials[0]
+            }
           } else {
             // Restore original materials when engine is not affected
-            const originalMaterialsForChild = originalMaterialsButton20Ref.current.get(child)
             if (originalMaterialsForChild) {
               child.material = Array.isArray(child.material) 
                 ? originalMaterialsForChild.map(m => m.clone())
@@ -973,29 +1136,33 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
     if (button21Ref.current) {
       button21Ref.current.traverse((child) => {
         if (child.isMesh && child.material) {
-          const materials = Array.isArray(child.material) ? child.material : [child.material]
+          const originalMaterialsForChild = originalMaterialsButton21Ref.current.get(child)
           
           if (engine2Affected) {
             // Apply darker material when engine is affected
-            const darkerMaterials = materials.map(mat => {
-              const darker = mat.clone()
-              if (darker.color) {
-                darker.color.multiplyScalar(0.3) // Make it 30% of original brightness (same as warning buttons)
-              }
-              // Set roughness to 100% (or smoothness to 0%)
-              if (darker.roughness !== undefined) {
-                darker.roughness = 1.0
-              }
-              if (darker.metalness !== undefined) {
-                darker.metalness = 0.0 // Also set metalness to 0 for matte appearance
-              }
-              darker.needsUpdate = true
-              return darker
-            })
-            child.material = Array.isArray(child.material) ? darkerMaterials : darkerMaterials[0]
+            // Use stored original materials as base to ensure consistency
+            if (originalMaterialsForChild) {
+              const darkerMaterials = originalMaterialsForChild.map(mat => {
+                const darker = mat.clone()
+                if (darker.color) {
+                  // Apply 0.3 multiplier to the stored original (which is already at 0.7)
+                  // This gives approximately 0.21 of the true original brightness
+                  darker.color.multiplyScalar(0.3 / 0.7) // Adjust to get 30% of true original
+                }
+                // Set roughness to 100% (or smoothness to 0%)
+                if (darker.roughness !== undefined) {
+                  darker.roughness = 1.0
+                }
+                if (darker.metalness !== undefined) {
+                  darker.metalness = 0.0 // Also set metalness to 0 for matte appearance
+                }
+                darker.needsUpdate = true
+                return darker
+              })
+              child.material = Array.isArray(child.material) ? darkerMaterials : darkerMaterials[0]
+            }
           } else {
             // Restore original materials when engine is not affected
-            const originalMaterialsForChild = originalMaterialsButton21Ref.current.get(child)
             if (originalMaterialsForChild) {
               child.material = Array.isArray(child.material) 
                 ? originalMaterialsForChild.map(m => m.clone())
@@ -1012,6 +1179,66 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
       })
     }
   }, [vibrationAffectedEngines, smokeAffectedEngines])
+
+  // Handle engine 1 switch position toggle
+  useEffect(() => {
+    if (!handle01Ref.current || !handlebase02Ref.current) return
+    
+    const moveDistance = 1.5 // Distance to move down (adjust as needed)
+    
+    if (engine1SwitchOn) {
+      // Move both meshes down
+      if (handle01Ref.current.userData.originalPosition) {
+        handle01Ref.current.position.y = handle01Ref.current.userData.originalPosition.y - moveDistance
+      }
+      if (handlebase02Ref.current.userData.originalPosition) {
+        handlebase02Ref.current.position.y = handlebase02Ref.current.userData.originalPosition.y - moveDistance
+      }
+    } else {
+      // Move both meshes back to original position
+      if (handle01Ref.current.userData.originalPosition) {
+        handle01Ref.current.position.copy(handle01Ref.current.userData.originalPosition)
+      }
+      if (handlebase02Ref.current.userData.originalPosition) {
+        handlebase02Ref.current.position.copy(handlebase02Ref.current.userData.originalPosition)
+      }
+    }
+    
+    // Notify parent of switch state change
+    if (onEngine1SwitchChange) {
+      onEngine1SwitchChange(engine1SwitchOn)
+    }
+  }, [engine1SwitchOn, onEngine1SwitchChange])
+
+  // Handle engine 2 switch position toggle
+  useEffect(() => {
+    if (!handle02Ref.current || !handlebase01Ref.current) return
+    
+    const moveDistance = 1.5 // Distance to move down (adjust as needed)
+    
+    if (engine2SwitchOn) {
+      // Move both meshes down
+      if (handle02Ref.current.userData.originalPosition) {
+        handle02Ref.current.position.y = handle02Ref.current.userData.originalPosition.y - moveDistance
+      }
+      if (handlebase01Ref.current.userData.originalPosition) {
+        handlebase01Ref.current.position.y = handlebase01Ref.current.userData.originalPosition.y - moveDistance
+      }
+    } else {
+      // Move both meshes back to original position
+      if (handle02Ref.current.userData.originalPosition) {
+        handle02Ref.current.position.copy(handle02Ref.current.userData.originalPosition)
+      }
+      if (handlebase01Ref.current.userData.originalPosition) {
+        handlebase01Ref.current.position.copy(handlebase01Ref.current.userData.originalPosition)
+      }
+    }
+    
+    // Notify parent of switch state change
+    if (onEngine2SwitchChange) {
+      onEngine2SwitchChange(engine2SwitchOn)
+    }
+  }, [engine2SwitchOn, onEngine2SwitchChange])
 
   // Apply highlight effect for monitorscreen06 and monitorscreen02 (dark color on hover)
   // button20 and button21 don't change material on hover - they show text instead
@@ -1458,6 +1685,7 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
 
     let foundIntersection = null
 
+    // Check regular elements
     for (const { ref, name } of elementsToCheck) {
       if (!ref.current) continue
 
@@ -1498,6 +1726,68 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
       }
     }
     
+    // Check engine 1 switch (handle01 and handlebase02) separately since they're not grouped
+    if (!foundIntersection && engine1SwitchGroupRef.current && handle01Ref.current && handlebase02Ref.current) {
+      const switchMeshes = []
+      handle01Ref.current.traverse((child) => {
+        if (child.isMesh) {
+          child.updateMatrixWorld(true)
+          switchMeshes.push(child)
+        }
+      })
+      handlebase02Ref.current.traverse((child) => {
+        if (child.isMesh) {
+          child.updateMatrixWorld(true)
+          switchMeshes.push(child)
+        }
+      })
+      
+      const switchIntersects = raycaster.intersectObjects(switchMeshes, true)
+      if (switchIntersects.length > 0) {
+        // Check if intersection is from handle01 or handlebase02
+        let current = switchIntersects[0].object
+        while (current) {
+          if (current === handle01Ref.current || current === handlebase02Ref.current) {
+            foundIntersection = engine1SwitchGroupRef.current // Use the ref object as the intersection marker
+            break
+          }
+          if (current === scene || !current.parent) break
+          current = current.parent
+        }
+      }
+    }
+
+    // Check engine 2 switch (handle02 and handlebase01) separately since they're not grouped
+    if (!foundIntersection && engine2SwitchGroupRef.current && handle02Ref.current && handlebase01Ref.current) {
+      const switchMeshes = []
+      handle02Ref.current.traverse((child) => {
+        if (child.isMesh) {
+          child.updateMatrixWorld(true)
+          switchMeshes.push(child)
+        }
+      })
+      handlebase01Ref.current.traverse((child) => {
+        if (child.isMesh) {
+          child.updateMatrixWorld(true)
+          switchMeshes.push(child)
+        }
+      })
+      
+      const switchIntersects = raycaster.intersectObjects(switchMeshes, true)
+      if (switchIntersects.length > 0) {
+        // Check if intersection is from handle02 or handlebase01
+        let current = switchIntersects[0].object
+        while (current) {
+          if (current === handle02Ref.current || current === handlebase01Ref.current) {
+            foundIntersection = engine2SwitchGroupRef.current // Use the ref object as the intersection marker
+            break
+          }
+          if (current === scene || !current.parent) break
+          current = current.parent
+        }
+      }
+    }
+    
     if (foundIntersection) {
       if (hoveredElement !== foundIntersection) {
         const previousHovered = hoveredElement
@@ -1509,7 +1799,8 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
           // Clear previous hover if it was a button or monitor
           if (previousHovered === button20Ref.current || previousHovered === button21Ref.current || previousHovered === monitorscreen02Ref.current || previousHovered === monitorscreen06Ref.current ||
               previousHovered === button18Ref.current || previousHovered === button27Ref.current || previousHovered === button28Ref.current ||
-              previousHovered === butotn28Ref.current || previousHovered === button29Ref.current || previousHovered === button31Ref.current || previousHovered === button32Ref.current) {
+              previousHovered === butotn28Ref.current || previousHovered === button29Ref.current || previousHovered === button31Ref.current || previousHovered === button32Ref.current ||
+              previousHovered === engine1SwitchGroupRef.current || previousHovered === engine2SwitchGroupRef.current) {
             onButtonHover(null)
           }
           // Set new button/monitor hover
@@ -1537,6 +1828,14 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
             onButtonHover('button31')
           } else if (foundIntersection === button32Ref.current) {
             onButtonHover('button32')
+          } else if (foundIntersection && foundIntersection === engine1SwitchGroupRef.current) {
+            // Include switch state in hover text
+            const switchStatus = engine1SwitchOn ? 'Off' : 'On'
+            onButtonHover(`Engine 1 Switch (${switchStatus})`)
+          } else if (foundIntersection && foundIntersection === engine2SwitchGroupRef.current) {
+            // Include switch state in hover text
+            const switchStatus = engine2SwitchOn ? 'Off' : 'On'
+            onButtonHover(`Engine 2 Switch (${switchStatus})`)
           } else {
             onButtonHover(null)
           }
@@ -1546,7 +1845,8 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
       if (hoveredElement) {
         const wasButtonOrMonitor = hoveredElement === button20Ref.current || hoveredElement === button21Ref.current || hoveredElement === monitorscreen02Ref.current || hoveredElement === monitorscreen06Ref.current ||
             hoveredElement === button18Ref.current || hoveredElement === button27Ref.current || hoveredElement === button28Ref.current ||
-            hoveredElement === butotn28Ref.current || hoveredElement === button29Ref.current || hoveredElement === button31Ref.current || hoveredElement === button32Ref.current
+            hoveredElement === butotn28Ref.current || hoveredElement === button29Ref.current || hoveredElement === button31Ref.current || hoveredElement === button32Ref.current ||
+            (hoveredElement && hoveredElement === engine1SwitchGroupRef.current) || (hoveredElement && hoveredElement === engine2SwitchGroupRef.current)
         setHoveredElement(null)
         gl.domElement.style.cursor = 'default'
         
@@ -1754,11 +2054,11 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
             ctx.fillStyle = '#1f2937'
             ctx.fillRect(0, 0, 1024, 1024)
             ctx.fillStyle = '#60a5fa'
-            ctx.font = 'bold 64px Arial'
+            ctx.font = 'bold 64px monospace'
             ctx.textAlign = 'center'
             ctx.fillText('Chat', 512, 400)
             ctx.fillStyle = '#f8fafc'
-            ctx.font = '32px Arial'
+            ctx.font = '32px monospace'
             ctx.fillText('Display Active', 512, 500)
             if (chatTextureRef.current) {
               chatTextureRef.current.needsUpdate = true
@@ -1771,11 +2071,11 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
             ctx.fillStyle = '#1f2937'
             ctx.fillRect(0, 0, 1024, 1024)
             ctx.fillStyle = '#60a5fa'
-            ctx.font = 'bold 64px Arial'
+            ctx.font = 'bold 64px monospace'
             ctx.textAlign = 'center'
             ctx.fillText('Chat', 512, 400)
             ctx.fillStyle = '#f8fafc'
-            ctx.font = '32px Arial'
+            ctx.font = '32px monospace'
             ctx.fillText('Display Active', 512, 500)
             if (chatTextureRef.current) {
               chatTextureRef.current.needsUpdate = true

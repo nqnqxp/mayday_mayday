@@ -44,6 +44,8 @@ export default function Page2() {
   const [closeUpMonitor, setCloseUpMonitor] = useState(null) // 'monitorscreen06', 'monitorscreen02', or null
   const exitCommsRef = useRef(null) // Ref to store the exitComms function from Cockpit
   const exitNavigationRef = useRef(null) // Ref to store the exitNavigation function from Cockpit
+  const toggleEngine1SwitchRef = useRef(null) // Ref to store the toggleEngine1Switch function from Cockpit
+  const toggleEngine2SwitchRef = useRef(null) // Ref to store the toggleEngine2Switch function from Cockpit
   const [notesCollapsed, setNotesCollapsed] = useState(false) // For collapsing notes
 
   // Format coordinates for display
@@ -649,6 +651,79 @@ export default function Page2() {
               onCloseUpMonitorChange={setCloseUpMonitor}
               onExitComms={(exitFn) => { exitCommsRef.current = exitFn }}
               onExitNavigation={(exitFn) => { exitNavigationRef.current = exitFn }}
+              onEngine1SwitchToggle={(toggleFn) => { toggleEngine1SwitchRef.current = toggleFn }}
+              onEngine1SwitchChange={(isOff) => {
+                // Sync switch state with engine state
+                // When switch is off (isOff = true), engine should be turned off
+                // When switch is on (isOff = false), engine should be turned on
+                // Only update if the state doesn't already match (to avoid double updates from button clicks)
+                const engineIsOff = turnedOffEngines.includes('engine1')
+                if (isOff && !engineIsOff) {
+                  // Switch is off, turn engine off
+                  setTurnedOffEngines((prev) => [...prev, 'engine1'])
+                  // Remove effects
+                  setSmokeAffectedEngines((prev) => prev.filter((e) => e !== 'engine1'))
+                  setVibrationAffectedEngines((prev) => prev.filter((e) => e !== 'engine1'))
+                } else if (!isOff && engineIsOff) {
+                  // Switch is on, turn engine on
+                  setTurnedOffEngines((prev) => prev.filter((e) => e !== 'engine1'))
+                  // Restore effects based on original state
+                  const wasSmokeAffected = originalSmokeAffected.includes('engine1')
+                  const wasVibrationAffected = originalVibrationAffected.includes('engine1')
+                  if (wasSmokeAffected) {
+                    setSmokeAffectedEngines((prev) => {
+                      if (!prev.includes('engine1')) {
+                        return [...prev, 'engine1']
+                      }
+                      return prev
+                    })
+                  }
+                  if (wasVibrationAffected && Math.random() < 0.5) {
+                    setVibrationAffectedEngines((prev) => {
+                      if (!prev.includes('engine1')) {
+                        return [...prev, 'engine1']
+                      }
+                      return prev
+                    })
+                  }
+                }
+              }}
+              onEngine2SwitchChange={(isOff) => {
+                // Sync switch state with engine state
+                // When switch is off (isOff = true), engine should be turned off
+                // When switch is on (isOff = false), engine should be turned on
+                // Only update if the state doesn't already match (to avoid double updates from button clicks)
+                const engineIsOff = turnedOffEngines.includes('engine2')
+                if (isOff && !engineIsOff) {
+                  // Switch is off, turn engine off
+                  setTurnedOffEngines((prev) => [...prev, 'engine2'])
+                  // Remove effects
+                  setSmokeAffectedEngines((prev) => prev.filter((e) => e !== 'engine2'))
+                  setVibrationAffectedEngines((prev) => prev.filter((e) => e !== 'engine2'))
+                } else if (!isOff && engineIsOff) {
+                  // Switch is on, turn engine on
+                  setTurnedOffEngines((prev) => prev.filter((e) => e !== 'engine2'))
+                  // Restore effects based on original state
+                  const wasSmokeAffected = originalSmokeAffected.includes('engine2')
+                  const wasVibrationAffected = originalVibrationAffected.includes('engine2')
+                  if (wasSmokeAffected) {
+                    setSmokeAffectedEngines((prev) => {
+                      if (!prev.includes('engine2')) {
+                        return [...prev, 'engine2']
+                      }
+                      return prev
+                    })
+                  }
+                  if (wasVibrationAffected && Math.random() < 0.5) {
+                    setVibrationAffectedEngines((prev) => {
+                      if (!prev.includes('engine2')) {
+                        return [...prev, 'engine2']
+                      }
+                      return prev
+                    })
+                  }
+                }
+              }}
               chatComponent={sessionReady && roomCode ? (
                 <ChatConnection roomCode={roomCode} pageId="Page 2" position="inline" />
               ) : null}
@@ -795,6 +870,7 @@ export default function Page2() {
             textTransform: 'uppercase',
             letterSpacing: '0.1em',
             pointerEvents: 'none',
+            fontFamily: 'monospace',
           }}
         >
           {hoveredButton === 'button20' ? 'Engine 1' : 
@@ -807,7 +883,9 @@ export default function Page2() {
            hoveredButton === 'butotn28' ? 'HYD' :
            hoveredButton === 'button31' ? 'OVERHEAD' :
            hoveredButton === 'button32' ? 'DOORS' :
-           hoveredButton === 'button29' ? 'AIR COND' : ''}
+           hoveredButton === 'button29' ? 'AIR COND' :
+           hoveredButton?.startsWith('Engine 1 Switch') ? hoveredButton :
+           hoveredButton?.startsWith('Engine 2 Switch') ? hoveredButton : ''}
         </div>
       )}
 
@@ -836,6 +914,7 @@ export default function Page2() {
             border: '1px solid rgba(255, 255, 255, 0.2)',
             cursor: 'pointer',
             transition: 'all 0.2s ease',
+            fontFamily: 'monospace',
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.background = 'rgba(15, 23, 42, 1)'
@@ -875,6 +954,7 @@ export default function Page2() {
             border: '1px solid rgba(255, 255, 255, 0.2)',
             cursor: 'pointer',
             transition: 'all 0.2s ease',
+            fontFamily: 'monospace',
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.background = 'rgba(15, 23, 42, 1)'
@@ -927,6 +1007,13 @@ export default function Page2() {
                 // Turning engine back on
                 setTurnedOffEngines((prev) => prev.filter((e) => e !== engine))
                 
+                // Toggle engine switch if this is engine 1 or 2
+                if (engine === 'engine1' && toggleEngine1SwitchRef.current) {
+                  toggleEngine1SwitchRef.current()
+                } else if (engine === 'engine2' && toggleEngine2SwitchRef.current) {
+                  toggleEngine2SwitchRef.current()
+                }
+                
                 // Restore effects based on original state
                 const wasSmokeAffected = originalSmokeAffected.includes(engine)
                 const wasVibrationAffected = originalVibrationAffected.includes(engine)
@@ -962,6 +1049,13 @@ export default function Page2() {
               } else {
                 // Turning engine off
                 setTurnedOffEngines((prev) => [...prev, engine])
+                
+                // Toggle engine switch if this is engine 1 or 2
+                if (engine === 'engine1' && toggleEngine1SwitchRef.current) {
+                  toggleEngine1SwitchRef.current()
+                } else if (engine === 'engine2' && toggleEngine2SwitchRef.current) {
+                  toggleEngine2SwitchRef.current()
+                }
                 
                 // Check if this engine had smoke before removing it
                 const hadSmoke = smokeAffectedEngines.includes(engine)
