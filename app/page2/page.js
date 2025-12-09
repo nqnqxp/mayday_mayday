@@ -66,6 +66,10 @@ export default function Page2() {
   const [autopilotTarget, setAutopilotTarget] = useState(null) // { name, lat, lon } of target airport
   const autopilotTargetRef = useRef(null)
   const autopilotEngagedRef = useRef(false)
+  const planeInfoChannelRef = useRef(null)
+  const milesFlownRef = useRef(milesFlown)
+  const turnedOffEnginesRefForPlaneInfo = useRef(turnedOffEngines)
+  const smokeAffectedEnginesRefForPlaneInfo = useRef(smokeAffectedEngines)
 
   // Format coordinates for display
   const formatCoordinates = (lat, lon) => {
@@ -301,6 +305,111 @@ export default function Page2() {
     }
   }, [sessionReady, roomCode, flightId])
 
+  // Set up channel for responding to plane information requests
+  useEffect(() => {
+    if (!sessionReady || !roomCode || !flightId) return
+
+    let isMounted = true
+
+    const setupPlaneInfoChannel = async () => {
+      try {
+        if (!planeInfoChannelRef.current) {
+          const createId = () => {
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+              return crypto.randomUUID()
+            }
+            return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+          }
+
+          const client = new Realtime({
+            authUrl: `/api/ably-token?clientId=${encodeURIComponent(createId())}`,
+            echoMessages: false,
+            transports: ['web_socket'],
+          })
+
+          const channelName = `rooms:${roomCode.trim().toUpperCase()}:plane-info`
+          const channel = client.channels.get(channelName)
+          planeInfoChannelRef.current = channel
+
+          // Attach channel
+          if (channel.state !== 'attached' && channel.state !== 'attaching') {
+            await channel.attach()
+          }
+
+          // Subscribe to plane info requests
+          channel.subscribe('plane-info-request', (message) => {
+            if (!isMounted) return
+            const payload = message?.data
+            if (!payload || !payload.flightNumber) return
+
+            // Check if the requested flight number matches the actual flight ID
+            const requestedFlight = payload.flightNumber.trim().toUpperCase()
+            const actualFlight = flightId.trim().toUpperCase()
+
+            if (requestedFlight === actualFlight) {
+              console.log('[Page 2] Plane info request authorized for:', requestedFlight)
+              
+              // Calculate flight instruments data using refs to get latest values
+              const currentMilesFlown = milesFlownRef.current
+              const currentTurnedOff = turnedOffEnginesRefForPlaneInfo.current
+              const currentSmokeAffected = smokeAffectedEnginesRefForPlaneInfo.current
+              
+              // Calculate max range using current engine states
+              const engine1Off = currentTurnedOff.includes('engine1') || currentSmokeAffected.includes('engine1')
+              const engine2Off = currentTurnedOff.includes('engine2') || currentSmokeAffected.includes('engine2')
+              
+              let maxRange
+              if (engine1Off && engine2Off) {
+                maxRange = 60
+              } else if (engine1Off || engine2Off) {
+                maxRange = 100
+              } else {
+                maxRange = 120
+              }
+              
+              const milesLeft = Math.max(0, maxRange - currentMilesFlown)
+              const flightInstruments = `Total Miles Able to Fly: ${maxRange.toFixed(1)} miles (updated)\nMiles Flown Since Start: ${currentMilesFlown.toFixed(1)} miles (updated)\nMiles Remaining: ${milesLeft.toFixed(1)} miles (updated)`
+
+              // Send response with authorized flag and flight instruments data
+              channel.publish('plane-info-response', {
+                authorized: true,
+                flightNumber: requestedFlight,
+                flightInstruments: flightInstruments,
+                timestamp: Date.now(),
+              }).catch(err => console.error('Failed to send plane info response', err))
+            } else {
+              console.log('[Page 2] Plane info request denied - incorrect flight number:', requestedFlight, 'expected:', actualFlight)
+              
+              // Send response with unauthorized flag
+              channel.publish('plane-info-response', {
+                authorized: false,
+                flightNumber: requestedFlight,
+                timestamp: Date.now(),
+              }).catch(err => console.error('Failed to send plane info response', err))
+            }
+          })
+
+          console.log('[Page 2] Subscribed to plane-info-request messages')
+        }
+      } catch (error) {
+        console.error('Failed to set up plane info channel', error)
+      }
+    }
+
+    setupPlaneInfoChannel()
+
+    return () => {
+      isMounted = false
+      if (planeInfoChannelRef.current) {
+        try {
+          planeInfoChannelRef.current.unsubscribe('plane-info-request')
+          planeInfoChannelRef.current.detach().catch(() => {})
+        } catch (e) {}
+        planeInfoChannelRef.current = null
+      }
+    }
+  }, [sessionReady, roomCode, flightId])
+
   // Publish flight data when coordinates update - publish every time coordinates change
   useEffect(() => {
     if (flightDataChannelRef.current && latitude !== null && longitude !== null && heading !== null && speed !== null && flightId) {
@@ -452,6 +561,29 @@ export default function Page2() {
     gameOverRef.current = gameOver
   }, [gameOver])
 
+  // Publish game over state immediately when it changes
+  useEffect(() => {
+    if (flightDataChannelRef.current && flightId && sessionReady) {
+      const channel = flightDataChannelRef.current
+      
+      // Only publish if channel is attached
+      if (channel.state === 'attached') {
+        // Publish game over state immediately, even if flight data hasn't changed
+        channel.publish('flight-update', {
+          flightId,
+          latitude: latitude || 0,
+          longitude: longitude || 0,
+          heading: heading || 0,
+          speed: speed || 0,
+          timestamp: Date.now(),
+          gameCleared: gameCleared || false,
+          gameOver: gameOver || false,
+          gameOverReason: gameOverReason || '',
+        }).catch(err => console.error('Failed to publish game over state', err))
+      }
+    }
+  }, [gameOver, gameOverReason, gameCleared, flightId, sessionReady, latitude, longitude, heading, speed])
+
   // Keep autopilot refs in sync
   useEffect(() => {
     autopilotEngagedRef.current = autopilotEngaged
@@ -460,6 +592,19 @@ export default function Page2() {
   useEffect(() => {
     autopilotTargetRef.current = autopilotTarget
   }, [autopilotTarget])
+
+  // Keep refs in sync for plane info
+  useEffect(() => {
+    milesFlownRef.current = milesFlown
+  }, [milesFlown])
+
+  useEffect(() => {
+    turnedOffEnginesRefForPlaneInfo.current = turnedOffEngines
+  }, [turnedOffEngines])
+
+  useEffect(() => {
+    smokeAffectedEnginesRefForPlaneInfo.current = smokeAffectedEngines
+  }, [smokeAffectedEngines])
 
   // Sync note 5 checkboxes (smoke/vibration) with actual engine states
   // But also allow checkbox to control smoke (bidirectional sync)
@@ -931,7 +1076,7 @@ export default function Page2() {
       {sessionReady && (
         <header
           style={{
-            display: notesCollapsed ? 'none' : 'grid',
+            display: 'none',
             gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
             gap: '16px',
             padding: '64px 24px 20px',
@@ -1207,70 +1352,6 @@ export default function Page2() {
         </div>
       )}
 
-      {/* Debug buttons */}
-      {sessionReady && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 24,
-            right: 24,
-            zIndex: 1000,
-            display: 'flex',
-            gap: '12px',
-          }}
-        >
-          {/* Notes collapse button */}
-          <button
-            onClick={() => setNotesCollapsed(!notesCollapsed)}
-            style={{
-              padding: '12px 20px',
-              borderRadius: '8px',
-              border: '2px solid #0f172a',
-              background: notesCollapsed ? '#0f172a' : '#ffffff',
-              color: notesCollapsed ? '#ffffff' : '#0f172a',
-              fontSize: '14px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              textTransform: 'uppercase',
-              letterSpacing: '0.1em',
-              transition: 'all 0.2s',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.opacity = '0.8'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.opacity = '1'
-            }}
-          >
-            {notesCollapsed ? 'Notes: Hidden' : 'Notes: Shown'}
-          </button>
-          {/* Shader toggle button */}
-          <button
-            onClick={() => setShaderEnabled(!shaderEnabled)}
-            style={{
-              padding: '12px 20px',
-              borderRadius: '8px',
-              border: '2px solid #0f172a',
-              background: shaderEnabled ? '#0f172a' : '#ffffff',
-              color: shaderEnabled ? '#ffffff' : '#0f172a',
-              fontSize: '14px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              textTransform: 'uppercase',
-              letterSpacing: '0.1em',
-              transition: 'all 0.2s',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.opacity = '0.8'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.opacity = '1'
-            }}
-          >
-            {shaderEnabled ? 'Shader: ON' : 'Shader: OFF'}
-          </button>
-        </div>
-      )}
 
       {/* Button hover text display */}
       {sessionReady && hoveredButton && (

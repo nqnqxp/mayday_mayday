@@ -28,6 +28,20 @@ if (typeof document !== 'undefined') {
       .note5-content::-webkit-scrollbar-thumb:hover {
         background: rgba(148, 163, 184, 0.7);
       }
+      .protocol-content::-webkit-scrollbar {
+        width: 8px;
+      }
+      .protocol-content::-webkit-scrollbar-track {
+        background: rgba(15, 23, 42, 0.3);
+        border-radius: 4px;
+      }
+      .protocol-content::-webkit-scrollbar-thumb {
+        background: rgba(148, 163, 184, 0.5);
+        border-radius: 4px;
+      }
+      .protocol-content::-webkit-scrollbar-thumb:hover {
+        background: rgba(148, 163, 184, 0.7);
+      }
     `
     document.head.appendChild(style)
   }
@@ -48,6 +62,10 @@ export default function Page3() {
   const [gameClearedOpacity, setGameClearedOpacity] = useState(0) // Opacity of game cleared overlay (0-1)
   const [gameOver, setGameOver] = useState(false) // Game over state
   const [gameOverReason, setGameOverReason] = useState('') // Reason for game over
+  const [planeInfoFlightNumber, setPlaneInfoFlightNumber] = useState('') // Flight number input for plane info
+  const [planeInfoDisplay, setPlaneInfoDisplay] = useState('') // Displayed plane information
+  const [planeInfoAuthorized, setPlaneInfoAuthorized] = useState(false) // Whether correct flight number was entered
+  const planeInfoChannelRef = useRef(null)
   const flightDataClientRef = useRef(null)
   const flightDataChannelRef = useRef(null)
   const flightDataCheckTimeoutRef = useRef(null)
@@ -201,10 +219,16 @@ export default function Page3() {
               }, 16) // Update every ~16ms (60fps)
             }
 
-            // Check if game is over
-            if (data.gameOver && !gameOver) {
-              setGameOver(true)
-              setGameOverReason(data.gameOverReason || '')
+            // Check if game is over - always update to ensure synchronization
+            if (data.gameOver !== undefined) {
+              if (data.gameOver && !gameOver) {
+                setGameOver(true)
+                setGameOverReason(data.gameOverReason || '')
+              } else if (!data.gameOver && gameOver) {
+                // Also handle case where game over is cleared
+                setGameOver(false)
+                setGameOverReason('')
+              }
             }
 
             // Add to flight path - update more frequently for smoother trail
@@ -317,6 +341,100 @@ export default function Page3() {
     }
   }, [sessionReady, roomCode])
 
+  // Set up channel for requesting plane information
+  useEffect(() => {
+    if (!sessionReady || !roomCode) return
+
+    let isMounted = true
+
+    const setupPlaneInfoChannel = async () => {
+      try {
+        if (!planeInfoChannelRef.current) {
+          const createId = () => {
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+              return crypto.randomUUID()
+            }
+            return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+          }
+
+          const client = new Realtime({
+            authUrl: `/api/ably-token?clientId=${encodeURIComponent(createId())}`,
+            echoMessages: false,
+            transports: ['web_socket'],
+          })
+
+          const channelName = `rooms:${roomCode.trim().toUpperCase()}:plane-info`
+          const channel = client.channels.get(channelName)
+          
+          if (channel.state !== 'attached' && channel.state !== 'attaching') {
+            await channel.attach()
+          }
+
+          // Subscribe to plane info responses
+          channel.subscribe('plane-info-response', (message) => {
+            if (!isMounted) return
+            const payload = message?.data
+            if (!payload) return
+
+            if (payload.authorized) {
+              setPlaneInfoAuthorized(true)
+              setPlaneInfoDisplay(payload.flightInstruments || '')
+            } else {
+              setPlaneInfoAuthorized(false)
+              setPlaneInfoDisplay('')
+            }
+          })
+
+          planeInfoChannelRef.current = channel
+          console.log('[Page 3] Plane info channel set up')
+        }
+      } catch (error) {
+        console.error('Failed to set up plane info channel', error)
+      }
+    }
+
+    setupPlaneInfoChannel()
+
+    return () => {
+      isMounted = false
+      // Don't detach - keep channel attached
+    }
+  }, [sessionReady, roomCode])
+
+  // Handle requesting plane information
+  const handleRequestPlaneInfo = async () => {
+    if (!planeInfoChannelRef.current || !planeInfoFlightNumber.trim()) {
+      return
+    }
+
+    try {
+      const channel = planeInfoChannelRef.current
+
+      // Ensure channel is attached
+      if (channel.state !== 'attached' && channel.state !== 'attaching') {
+        await channel.attach()
+        let attempts = 0
+        while (channel.state !== 'attached' && attempts < 20) {
+          await new Promise((resolve) => setTimeout(resolve, 100))
+          attempts++
+        }
+      }
+
+      if (channel.state !== 'attached') {
+        console.error('[Page 3] Channel not attached for plane info request')
+        return
+      }
+
+      await channel.publish('plane-info-request', {
+        flightNumber: planeInfoFlightNumber.trim().toUpperCase(),
+        timestamp: Date.now(),
+      })
+      console.log('[Page 3] Requested plane info for flight:', planeInfoFlightNumber)
+    } catch (error) {
+      console.error('Failed to request plane info', error)
+    }
+  }
+
   // Handle autopilot recommendation
   const handleAutopilotRecommendation = async (airportName, airportLat, airportLon) => {
     if (!roomCode) {
@@ -416,7 +534,15 @@ export default function Page3() {
         >
                  {[
                    { title: 'Navigation Aids', isFlightTracker: true },
-                   { title: 'Radars', text: 'Primary Surveillance Radar\nSecondary Surveillance Radar' },
+                   { 
+                     title: 'Plane Information', 
+                     isPlaneInfo: true,
+                     isColumn2: true,
+                     column2Notes: [
+                       { title: 'Plane Information', isPlaneInfo: true },
+                       { title: 'NAVIGATION AID PROTOCOL', isProtocol: true },
+                     ]
+                   },
                    { title: 'Communication Systems', isChat: true },
                    { title: 'Emergency protocols', text: 'ANTI ICE\nENG\nHYD\nOVERHEAD\nDOORS\nAIR COND', isClickable: true },
                    { title: note5Heading, text: note5Description },
@@ -425,15 +551,15 @@ export default function Page3() {
               key={note.title}
               className={index === 4 ? 'note5-container' : ''}
               style={{
-                background: '#1f2937',
+                background: note.isColumn2 ? 'transparent' : '#1f2937',
                 color: '#f8fafc',
-                padding: '18px 16px',
+                padding: note.isColumn2 ? '0' : '18px 16px',
                 borderRadius: '14px',
-                boxShadow: '0 10px 24px rgba(15, 23, 42, 0.2)',
-                border: '1px solid rgba(148, 163, 184, 0.2)',
+                boxShadow: note.isColumn2 ? 'none' : '0 10px 24px rgba(15, 23, 42, 0.2)',
+                border: note.isColumn2 ? 'none' : '1px solid rgba(148, 163, 184, 0.2)',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: note.isChat ? '0' : '12px',
+                gap: note.isColumn2 ? '16px' : (note.isChat ? '0' : '12px'),
                 position: 'relative',
                 overflow: note.isChat ? 'visible' : (index === 4 ? 'hidden' : 'hidden'),
                 zIndex: note.isChat ? 101 : 'auto',
@@ -442,6 +568,162 @@ export default function Page3() {
                 minHeight: index === 0 ? '550px' : 'auto',
               }}
             >
+              {note.isColumn2 ? (
+                note.column2Notes.map((subNote, subIndex) => (
+                  <div
+                    key={subNote.title}
+                      style={{
+                        background: '#1f2937',
+                        color: '#f8fafc',
+                        padding: '18px 16px',
+                        borderRadius: '14px',
+                        boxShadow: '0 10px 24px rgba(15, 23, 42, 0.2)',
+                        border: '1px solid rgba(148, 163, 184, 0.2)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '12px',
+                        flex: subIndex === 0 ? '1 1 auto' : '0 0 auto',
+                        minHeight: subIndex === 0 ? 0 : 'auto',
+                        maxHeight: subIndex === 1 ? '200px' : 'none',
+                        overflow: 'hidden',
+                      }}
+                  >
+                    {subNote.isPlaneInfo ? (
+                      <>
+                        <span
+                          style={{
+                            fontWeight: 700,
+                            letterSpacing: '0.08em',
+                            fontSize: '16px',
+                            textTransform: 'uppercase',
+                            opacity: 1,
+                            margin: 0,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {subNote.title}
+                        </span>
+                        <div style={{ 
+                          display: 'flex', 
+                          flexDirection: 'column', 
+                          gap: '12px', 
+                          flex: 1, 
+                          minHeight: 0,
+                          overflow: 'hidden',
+                        }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
+                            <input
+                              type="text"
+                              value={planeInfoFlightNumber}
+                              onChange={(e) => setPlaneInfoFlightNumber(e.target.value.toUpperCase())}
+                              onKeyPress={(e) => {
+                                if (e.key === 'Enter') {
+                                  handleRequestPlaneInfo()
+                                }
+                              }}
+                              placeholder="Enter flight number..."
+                              style={{
+                                padding: '8px 12px',
+                                borderRadius: '6px',
+                                border: '2px solid rgba(148, 163, 184, 0.3)',
+                                background: 'rgba(30, 41, 59, 0.9)',
+                                color: '#f8fafc',
+                                fontSize: '13px',
+                                outline: 'none',
+                              }}
+                            />
+                            <button
+                              onClick={handleRequestPlaneInfo}
+                              style={{
+                                padding: '8px 12px',
+                                borderRadius: '6px',
+                                border: 'none',
+                                background: 'rgba(96, 165, 250, 0.8)',
+                                color: '#f8fafc',
+                                fontSize: '13px',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                              }}
+                            >
+                              Display Information
+                            </button>
+                          </div>
+                          {planeInfoAuthorized && planeInfoDisplay && (
+                            <div style={{ 
+                              flex: 1, 
+                              minHeight: 0, 
+                              display: 'flex', 
+                              flexDirection: 'column',
+                              overflow: 'hidden',
+                              maxHeight: '100%',
+                            }}>
+                              <div
+                                style={{
+                                  margin: 0,
+                                  fontSize: '13px',
+                                  lineHeight: 1.5,
+                                  whiteSpace: 'pre-line',
+                                  color: '#f8fafc',
+                                  overflowY: 'auto',
+                                  overflowX: 'hidden',
+                                  wordWrap: 'break-word',
+                                  flex: 1,
+                                  minHeight: 0,
+                                }}
+                              >
+                                {planeInfoDisplay}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    ) : subNote.isProtocol ? (
+                      <>
+                        <span
+                          style={{
+                            fontWeight: 700,
+                            letterSpacing: '0.08em',
+                            fontSize: '16px',
+                            textTransform: 'uppercase',
+                            opacity: 1,
+                            margin: 0,
+                            flexShrink: 0,
+                          }}
+                        >
+                          {subNote.title}
+                        </span>
+                        <div
+                          className="protocol-content"
+                          style={{
+                            margin: 0,
+                            fontSize: '13px',
+                            lineHeight: 1.8,
+                            whiteSpace: 'pre-line',
+                            color: '#f8fafc',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '8px',
+                            overflowY: 'auto',
+                            overflowX: 'hidden',
+                            maxHeight: '150px',
+                            flex: 1,
+                            minHeight: 0,
+                          }}
+                        >
+                          <div style={{ fontWeight: 600, marginBottom: '4px' }}>
+                            **in the event where the plane is too far from land, airport data may not be obtained**
+                          </div>
+                          <div>1. Obtain flight number from pilot</div>
+                          <div>2. Enter flight number into navigation aid interface.</div>
+                          <div>3. Click on nearest airport, and autopilot recommendation</div>
+                          <div>4. Alert pilot to click on the recommendation in order to engage in autopilot to the selected airport.</div>
+                        </div>
+                      </>
+                    ) : null}
+                  </div>
+                ))
+              ) : (
+                <>
               {note.isChat ? (
                 <>
                   <div
@@ -600,9 +882,9 @@ export default function Page3() {
                                onClick={() => {
                                  setNote5Heading(item)
                                  // Set description based on clicked item
-                                 if (item === 'ENG') {
-                                   setNote5Description('In the event of smoke, check which one is affected, and shut down the affected engine\n\nIn the event of vibration, check which one is affected, and restart the affected engine\n\nIf both engines are smoking, turn them both off. The Aircraft can still fly 60 miles, but may not gain altitude. Confirm location and altitude. Guide pilot to a water landing if nearest open runway is more than 60 miles away. Guide pilot to nearest runway if it is less than 60 miles away.')
-                                 } else {
+                                if (item === 'ENG') {
+                                  setNote5Description('PROTOCOL\n\nIn the event of smoke, check which one is affected, and shut down the affected engine\n\nIn the event of vibration, check which one is affected, and restart the affected engine\n\nIf an engine is vibrating for longer than 1 minute, it may begin to smoke.\n\n\n\nFLYING DISTANCE INFORMATION\n\nIf one engine is turned off, the plane may still be able to fly 100 miles.\n\nIf both are turned off, the plane may only be able to fly 60 miles.\n\nIf both are on and not affected by smoke or vibration anymore, it may fly up to 120 miles.')
+                                } else {
                                    setNote5Description('')
                                  }
                                }}
@@ -664,6 +946,8 @@ export default function Page3() {
                          )}
                        </>
                      )}
+                </>
+              )}
             </div>
           ))}
         </header>
@@ -680,7 +964,7 @@ export default function Page3() {
           }}
         />
       {sessionReady && (
-        <Scene showClouds={true}>
+        <Scene showClouds={false} showSkybox={false}>
           {/* The controller page does not render the cockpit visuals */}
         </Scene>
       )}

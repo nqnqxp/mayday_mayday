@@ -12,7 +12,7 @@ import Smoke from './Smoke'
 // Context to share gizmo mode state
 export const GizmoModeContext = createContext({ gizmoMode: false, setGizmoMode: () => {} })
 
-export default function Scene({ children, cameraProps, controlsProps, enablePointerEvents = false, showClouds = true, enableShader = true, smokeAffectedEngines = [], turnedOffEngines = [] }) {
+export default function Scene({ children, cameraProps, controlsProps, enablePointerEvents = false, showClouds = true, showSkybox = true, enableShader = true, smokeAffectedEngines = [], turnedOffEngines = [] }) {
   const { gizmoMode, isCloseUp } = useContext(GizmoModeContext)
   
   // Only render OrbitControls when NOT in gizmo mode AND NOT in close-up mode
@@ -57,7 +57,7 @@ export default function Scene({ children, cameraProps, controlsProps, enablePoin
           {...controlsProps}
         />
       )}
-      <Skybox />
+      {showSkybox && <Skybox />}
       {showClouds && <Clouds />}
       {/* Smoke is enabled if there are any engines with active smoke
           (smokeAffectedEngines only contains engines that are on and have smoke) */}
