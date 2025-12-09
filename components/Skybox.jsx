@@ -10,7 +10,7 @@ export default function Skybox() {
   // Create gradient sky material
   const skyMaterial = new THREE.ShaderMaterial({
     uniforms: {
-      topColor: { value: new THREE.Color(0x4A90E2) }, // Deeper, more saturated blue
+      topColor: { value: new THREE.Color(0x1E4A7A) }, // Dark blue for top of sky
       bottomColor: { value: new THREE.Color(0xF0F8FF) }, // Very light blue/almost white
       offset: { value: 0.0 },
       exponent: { value: 0.5 } // Lower exponent for more contrast transition

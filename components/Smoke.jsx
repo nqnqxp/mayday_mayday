@@ -37,6 +37,7 @@ export default function Smoke({ enabled = false }) {
   const smokeStopTimeRef = useRef(null)
   const previousEnabledRef = useRef(enabled)
   const lastFadeOutStartRef = useRef(null) // Track when fade-out last started
+  const fadeOutStartOpacityRef = useRef(0) // Track opacity when fade-out begins
   const fadeInDuration = 30 // seconds to fully fade in (increased for slower appearance)
   const fadeOutDuration = 10 // seconds to fully fade out (faster dissipation)
   const minTimeBetweenFadeOutAndFadeIn = 0.5 // Minimum seconds between fade-out start and fade-in start
@@ -71,6 +72,7 @@ export default function Smoke({ enabled = false }) {
         smokeStartTimeRef.current = now
         smokeStopTimeRef.current = null // Clear stop time when starting
         lastFadeOutStartRef.current = null // Clear last fade-out start time
+        fadeOutStartOpacityRef.current = 0 // Reset stored opacity for new fade-in
       }
       // If fade-out is still in progress or too soon after fade-out start, don't start fade-in
       // This prevents the "double smoke" effect where new smoke appears during fade-out
@@ -81,9 +83,18 @@ export default function Smoke({ enabled = false }) {
         const now = Date.now()
         smokeStopTimeRef.current = now
         lastFadeOutStartRef.current = now // Track when fade-out started
-        // If smoke was never properly started, assume it was fully faded in for fade-out calculation
-        if (smokeStartTimeRef.current === null) {
+        
+        // Calculate current opacity at the moment fade-out begins
+        // This ensures smoke continues from its current state, not jumping to 100%
+        if (smokeStartTimeRef.current !== null) {
+          const elapsed = (now - smokeStartTimeRef.current) / 1000 // seconds
+          const fadeInProgress = Math.min(elapsed / fadeInDuration, 1)
+          const easedFadeIn = 1 - Math.pow(1 - fadeInProgress, 3) // Cubic ease-out
+          fadeOutStartOpacityRef.current = easedFadeIn // Store the current fade-in factor (0 to 1)
+        } else {
+          // If smoke was never properly started, assume it was fully faded in
           smokeStartTimeRef.current = now - (fadeInDuration * 1000)
+          fadeOutStartOpacityRef.current = 1.0
         }
       }
     } else if (!enabled && !wasEnabled && smokeStartTimeRef.current === null && smokeStopTimeRef.current === null) {
@@ -183,13 +194,10 @@ export default function Smoke({ enabled = false }) {
             const elapsed = (Date.now() - smokeStartTimeRef.current) / 1000 // seconds
             fadeInProgress = Math.min(elapsed / fadeInDuration, 1)
           }
-        } else if (isFadingOut) {
-          // If fading out, assume we were fully faded in
-          fadeInProgress = 1.0
         }
         
         // Gradually increase opacity using easing function (ease-out) for fade-in
-        const easedFadeIn = 1 - Math.pow(1 - fadeInProgress, 3) // Cubic ease-out
+        const easedFadeIn = enabled ? (1 - Math.pow(1 - fadeInProgress, 3)) : fadeOutStartOpacityRef.current
         
         // Calculate fade-out progress (1 to 0) when stopping
         let fadeOutProgress = 1.0
@@ -206,6 +214,7 @@ export default function Smoke({ enabled = false }) {
           if (elapsed >= fadeOutDuration) {
             smokeStartTimeRef.current = null
             smokeStopTimeRef.current = null
+            fadeOutStartOpacityRef.current = 0
             groupRef.current.scale.set(1, 1, 1)
             if (smokeMaterial) {
               smokeMaterial.opacity = 0
@@ -227,8 +236,11 @@ export default function Smoke({ enabled = false }) {
           }
         }
         
-        // Combine fade-in and fade-out factors
-        const opacityFactor = easedFadeIn * fadeOutProgress
+        // When fading out, start from the stored opacity at fade-out start, then fade to 0
+        // When fading in, use the fade-in progress
+        const opacityFactor = isFadingOut 
+          ? fadeOutStartOpacityRef.current * fadeOutProgress 
+          : easedFadeIn
         const currentOpacity = opacityFactor * maxOpacity
         
         // Update material opacity - update all meshes in the group
@@ -299,6 +311,7 @@ export default function Smoke({ enabled = false }) {
           if (fadeOutComplete) {
             smokeStartTimeRef.current = null
             smokeStopTimeRef.current = null
+            fadeOutStartOpacityRef.current = 0
           }
         }
         // If we just became disabled but fade-out hasn't started yet, don't reset

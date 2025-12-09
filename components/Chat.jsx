@@ -49,7 +49,7 @@ const getDisplayName = (pageId) => {
   return pageId
 }
 
-export default function Chat({ roomCode, pageId, position = 'bottom-right', onConnectionChange, autoConnect = false, onConnectReady, sharedClient, sharedChannel }) {
+export default function Chat({ roomCode, pageId, position = 'bottom-right', onConnectionChange, autoConnect = false, onConnectReady, sharedClient, sharedChannel, onAutopilotClick, autopilotEngaged, autopilotTarget }) {
   const [messages, setMessages] = useState([])
   const [inputValue, setInputValue] = useState('')
   const [isConnected, setIsConnected] = useState(false)
@@ -207,6 +207,7 @@ export default function Chat({ roomCode, pageId, position = 'bottom-right', onCo
                   text: payload.text,
                   sender: payload.sender,
                   timestamp: payload.timestamp || Date.now(),
+                  autopilotData: payload.autopilotData || null,
                 },
               ]
             })
@@ -382,6 +383,7 @@ export default function Chat({ roomCode, pageId, position = 'bottom-right', onCo
                   text: payload.text,
                   sender: payload.sender,
                   timestamp: payload.timestamp || Date.now(),
+                  autopilotData: payload.autopilotData || null,
                 },
               ]
             })
@@ -760,9 +762,60 @@ export default function Chat({ roomCode, pageId, position = 'bottom-right', onCo
                   fontSize: '13px',
                   lineHeight: 1.4,
                   wordWrap: 'break-word',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
                 }}
               >
                 {msg.text}
+                {msg.text?.toLowerCase().startsWith('autopilot recommendation:') && msg.autopilotData && pageId === 'Page 2' && (
+                  autopilotEngaged && autopilotTarget && 
+                  autopilotTarget.name === msg.autopilotData.airportName &&
+                  Math.abs(autopilotTarget.lat - msg.autopilotData.airportLat) < 0.001 &&
+                  Math.abs(autopilotTarget.lon - msg.autopilotData.airportLon) < 0.001 ? (
+                    <div
+                      style={{
+                        padding: '8px 16px',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(34, 197, 94, 0.5)',
+                        background: 'rgba(34, 197, 94, 0.2)',
+                        color: '#4ade80',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        alignSelf: 'flex-start',
+                      }}
+                    >
+                      Autopilot engaged
+                    </div>
+                  ) : onAutopilotClick ? (
+                    <button
+                      onClick={() => {
+                        if (onAutopilotClick && msg.autopilotData) {
+                          console.log('[Chat] Autopilot button clicked:', msg.autopilotData.airportName)
+                          onAutopilotClick(msg.autopilotData.airportName, msg.autopilotData.airportLat, msg.autopilotData.airportLon)
+                        }
+                      }}
+                      data-autopilot-button="true"
+                      data-airport-name={msg.autopilotData?.airportName}
+                      style={{
+                        padding: '8px 16px',
+                        borderRadius: '6px',
+                        border: 'none',
+                        background: 'rgba(34, 197, 94, 0.9)',
+                        color: '#ffffff',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        alignSelf: 'flex-start',
+                        pointerEvents: 'auto',
+                        position: 'relative',
+                        zIndex: 1000,
+                      }}
+                    >
+                      Autopilot to {msg.autopilotData.airportName}
+                    </button>
+                  ) : null
+                )}
               </div>
             </div>
           ))

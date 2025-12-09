@@ -44,12 +44,17 @@ export default function Page3() {
   const [flightData, setFlightData] = useState(null) // { latitude, longitude, heading, speed }
   const [flightPath, setFlightPath] = useState([])
   const [showNoFlightFound, setShowNoFlightFound] = useState(false)
+  const [gameCleared, setGameCleared] = useState(false) // Game cleared state (successful landing)
+  const [gameClearedOpacity, setGameClearedOpacity] = useState(0) // Opacity of game cleared overlay (0-1)
+  const [gameOver, setGameOver] = useState(false) // Game over state
+  const [gameOverReason, setGameOverReason] = useState('') // Reason for game over
   const flightDataClientRef = useRef(null)
   const flightDataChannelRef = useRef(null)
   const flightDataCheckTimeoutRef = useRef(null)
   const hasReceivedDataRef = useRef(false)
   const lastFlightUpdateRef = useRef(null)
   const trackedFlightIdRef = useRef('')
+  const chatChannelRef = useRef(null)
 
   // Handle flight number submission
   const handleFlightNumberSubmit = (flightNum) => {
@@ -179,6 +184,29 @@ export default function Page3() {
               }
             })
 
+            // Check if game is cleared
+            if (data.gameCleared && !gameCleared) {
+              setGameCleared(true)
+              // Gradually fade in the game cleared overlay over 2 seconds
+              const startTime = Date.now()
+              const fadeDuration = 2000 // 2 seconds
+              const fadeInterval = setInterval(() => {
+                const elapsed = Date.now() - startTime
+                const progress = Math.min(elapsed / fadeDuration, 1)
+                setGameClearedOpacity(progress)
+                
+                if (progress >= 1) {
+                  clearInterval(fadeInterval)
+                }
+              }, 16) // Update every ~16ms (60fps)
+            }
+
+            // Check if game is over
+            if (data.gameOver && !gameOver) {
+              setGameOver(true)
+              setGameOverReason(data.gameOverReason || '')
+            }
+
             // Add to flight path - update more frequently for smoother trail
             setFlightPath((prev) => {
               const now = data.timestamp || Date.now()
@@ -243,6 +271,116 @@ export default function Page3() {
       }
     }
   }, [])
+
+  // Set up chat channel for sending autopilot recommendations
+  useEffect(() => {
+    if (!sessionReady || !roomCode) return
+
+    let isMounted = true
+
+    const setupChatChannel = async () => {
+      try {
+        if (!chatChannelRef.current) {
+          const createId = () => {
+            if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+              return crypto.randomUUID()
+            }
+            return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+          }
+
+          const client = new Realtime({
+            authUrl: `/api/ably-token?clientId=${encodeURIComponent(createId())}`,
+            echoMessages: false,
+            transports: ['web_socket'],
+          })
+
+          const channelName = `rooms:${roomCode.trim().toUpperCase()}`
+          const channel = client.channels.get(channelName)
+          
+          if (channel.state !== 'attached' && channel.state !== 'attaching') {
+            await channel.attach()
+          }
+          
+          chatChannelRef.current = channel
+          console.log('[Page 3] Chat channel set up for autopilot recommendations')
+        }
+      } catch (error) {
+        console.error('Failed to set up chat channel', error)
+      }
+    }
+
+    setupChatChannel()
+
+    return () => {
+      isMounted = false
+      // Don't detach - keep channel attached for sending messages
+    }
+  }, [sessionReady, roomCode])
+
+  // Handle autopilot recommendation
+  const handleAutopilotRecommendation = async (airportName, airportLat, airportLon) => {
+    if (!roomCode) {
+      console.error('Cannot send autopilot recommendation: no room code')
+      return
+    }
+
+    try {
+      // Ensure channel is set up and attached
+      if (!chatChannelRef.current) {
+        const createId = () => {
+          if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+            return crypto.randomUUID()
+          }
+          return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+        }
+
+        const client = new Realtime({
+          authUrl: `/api/ably-token?clientId=${encodeURIComponent(createId())}`,
+          echoMessages: false,
+          transports: ['web_socket'],
+        })
+
+        const channelName = `rooms:${roomCode.trim().toUpperCase()}`
+        const channel = client.channels.get(channelName)
+        chatChannelRef.current = channel
+      }
+
+      const channel = chatChannelRef.current
+
+      // Ensure channel is attached before publishing
+      if (channel.state !== 'attached' && channel.state !== 'attaching') {
+        console.log('[Page 3] Attaching channel before sending autopilot recommendation')
+        await channel.attach()
+        // Wait a bit for attachment to complete
+        let attempts = 0
+        while (channel.state !== 'attached' && attempts < 20) {
+          await new Promise((resolve) => setTimeout(resolve, 100))
+          attempts++
+        }
+      }
+
+      if (channel.state !== 'attached') {
+        console.error('[Page 3] Channel not attached, state:', channel.state)
+        return
+      }
+
+      const message = `autopilot recommendation: autopilot to ${airportName}`
+      await channel.publish('chat', {
+        text: message,
+        sender: 'Page 3',
+        timestamp: Date.now(),
+        actorId: 'page3-autopilot',
+        autopilotData: {
+          airportName,
+          airportLat,
+          airportLon,
+        },
+      })
+      console.log('[Page 3] Sent autopilot recommendation:', message)
+    } catch (error) {
+      console.error('Failed to send autopilot recommendation', error)
+    }
+  }
 
   return (
     <main
@@ -429,6 +567,8 @@ export default function Page3() {
                                  flightId={trackedFlightId}
                                  flightPath={flightPath}
                                  showCoordinates={false}
+                                 showAutopilotButton={sessionReady && roomCode}
+                                 onAutopilotRecommendation={handleAutopilotRecommendation}
                                />
                              </div>
                            )}
@@ -561,6 +701,134 @@ export default function Page3() {
       >
         Air Traffic Controller
       </div>
+
+      {/* Game Cleared overlay */}
+      {gameCleared && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            background: `rgba(0, 0, 0, ${gameClearedOpacity * 0.85})`,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            pointerEvents: 'none',
+            transition: 'background 0.1s ease-out',
+          }}
+        >
+          <h1
+            style={{
+              fontSize: '72px',
+              fontWeight: 700,
+              color: '#f8fafc',
+              margin: 0,
+              marginBottom: '24px',
+              fontFamily: 'monospace',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              opacity: gameClearedOpacity,
+              transition: 'opacity 0.1s ease-out',
+            }}
+          >
+            GAME CLEARED
+          </h1>
+          <p
+            style={{
+              fontSize: '20px',
+              color: '#f8fafc',
+              margin: 0,
+              marginBottom: '24px',
+              opacity: 0.9 * gameClearedOpacity,
+              fontFamily: 'monospace',
+              textAlign: 'center',
+              maxWidth: '800px',
+              lineHeight: 1.5,
+              transition: 'opacity 0.1s ease-out',
+            }}
+          >
+            successfully landed at an airport
+          </p>
+          <p
+            style={{
+              fontSize: '24px',
+              color: '#f8fafc',
+              margin: 0,
+              opacity: 0.9 * gameClearedOpacity,
+              fontFamily: 'monospace',
+              transition: 'opacity 0.1s ease-out',
+            }}
+          >
+            refresh the page to restart
+          </p>
+        </div>
+      )}
+
+      {/* Game Over overlay */}
+      {gameOver && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10000,
+            pointerEvents: 'none',
+          }}
+        >
+          <h1
+            style={{
+              fontSize: '72px',
+              fontWeight: 700,
+              color: '#f8fafc',
+              margin: 0,
+              marginBottom: '24px',
+              fontFamily: 'monospace',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+            }}
+          >
+            GAME OVER
+          </h1>
+          {gameOverReason && (
+            <p
+              style={{
+                fontSize: '20px',
+                color: '#f8fafc',
+                margin: 0,
+                marginBottom: '24px',
+                opacity: 0.9,
+                fontFamily: 'monospace',
+                textAlign: 'center',
+                maxWidth: '800px',
+                lineHeight: 1.5,
+              }}
+            >
+              {gameOverReason}
+            </p>
+          )}
+          <p
+            style={{
+              fontSize: '24px',
+              color: '#f8fafc',
+              margin: 0,
+              opacity: 0.9,
+              fontFamily: 'monospace',
+            }}
+          >
+            Refresh the page to restart
+          </p>
+        </div>
+      )}
     </main>
   )
 }

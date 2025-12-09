@@ -63,7 +63,7 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
 }
 
 // Fetch airports from Overpass API (OpenStreetMap)
-const fetchNearbyAirports = async (lat, lon, radiusMiles = 100) => {
+const fetchNearbyAirports = async (lat, lon, radiusMiles = 130) => {
   try {
     // Convert radius from miles to degrees (approximate)
     // 1 degree latitude ≈ 69 miles
@@ -462,7 +462,9 @@ export default function USMap({
   heading, 
   flightId, 
   flightPath = [], 
-  showCoordinates = true
+  showCoordinates = true,
+  showAutopilotButton = false,
+  onAutopilotRecommendation = null
 }) {
   const [isClient, setIsClient] = useState(false)
   const [nearbyAirports, setNearbyAirports] = useState([])
@@ -487,7 +489,7 @@ export default function USMap({
   const fetchTimeoutRef = useRef(null)
 
   // Fetch nearby airports when coordinates change (with rate limiting)
-  // This uses the plane's current position (from page 2) to find airports within 100 miles
+  // This uses the plane's current position (from page 2) to find airports within 130 miles
   useEffect(() => {
     if (!latitude || !longitude || !isClient) {
       console.log('USMap: Skipping airport fetch - missing coordinates or client not ready', { latitude, longitude, isClient })
@@ -587,7 +589,7 @@ export default function USMap({
         // Update last fetch time
         lastFetchRef.current = { lat: latitude, lon: longitude, timestamp: Date.now() }
         
-        const airports = await fetchNearbyAirports(latitude, longitude, 100)
+        const airports = await fetchNearbyAirports(latitude, longitude, 130)
         console.log('✅ [USMap] Airport fetch completed. Found:', airports.length, 'airports')
         
         if (isMounted) {
@@ -624,7 +626,7 @@ export default function USMap({
           setAirportError(null)
           
           if (airports.length === 0) {
-            console.warn('⚠️ [USMap] No airports found within 100 miles of', latitude.toFixed(4), longitude.toFixed(4))
+            console.warn('⚠️ [USMap] No airports found within 130 miles of', latitude.toFixed(4), longitude.toFixed(4))
             console.warn('  This might be normal if the area is remote. Check console for Overpass API response details.')
             console.warn('  Empty result cached with short TTL - will retry on next coordinate change')
           } else {
@@ -772,7 +774,7 @@ export default function USMap({
             />
           )}
           
-          {/* Airport markers - within 100 miles, sorted by distance (closest first) */}
+          {/* Airport markers - within 130 miles, sorted by distance (closest first) */}
           {nearbyAirports.length > 0 && airportIcon && nearbyAirports.map((airport, idx) => {
             if (!airport.lat || !airport.lon || isNaN(airport.lat) || isNaN(airport.lon)) {
               console.warn('Invalid airport coordinates:', airport)
@@ -792,6 +794,31 @@ export default function USMap({
                     <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
                       {airport.distance.toFixed(1)} mi away
                     </div>
+                    {showAutopilotButton && onAutopilotRecommendation && (
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          console.log('[USMap] Autopilot recommendation button clicked for:', airport.name)
+                          onAutopilotRecommendation(airport.name, airport.lat, airport.lon)
+                        }}
+                        style={{
+                          marginTop: '8px',
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          border: 'none',
+                          background: 'rgba(96, 165, 250, 0.9)',
+                          color: '#ffffff',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          width: '100%',
+                          pointerEvents: 'auto',
+                        }}
+                      >
+                        Autopilot Recommendation
+                      </button>
+                    )}
                   </div>
                 </Popup>
               </Marker>
@@ -824,7 +851,7 @@ export default function USMap({
                 <div>Lat: {latitude?.toFixed(4) ?? 'null'}</div>
                 <div>Lon: {longitude?.toFixed(4) ?? 'null'}</div>
                 <div style={{ marginTop: '4px', fontSize: '9px', opacity: 0.7 }}>
-                  Searching within 100 miles of plane
+                  Searching within 130 miles of plane
                 </div>
               </div>
                {airportError && (

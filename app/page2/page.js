@@ -27,12 +27,27 @@ export default function Page2() {
   const [speed, setSpeed] = useState(null) // Speed in knots
   const [flightId, setFlightId] = useState('') // Flight ID number
   const [flightPath, setFlightPath] = useState([]) // Flight path history
+  const [milesFlown, setMilesFlown] = useState(0) // Total miles flown since start
+  const [vibrationStartTimes, setVibrationStartTimes] = useState({}) // Track when vibration started for each engine: { engine1: timestamp, engine2: timestamp }
+  const [smokeStartTimes, setSmokeStartTimes] = useState({}) // Track when smoke started for each engine: { engine1: timestamp, engine2: timestamp }
+  const [gameOver, setGameOver] = useState(false) // Game over state
+  const [gameOverReason, setGameOverReason] = useState('') // Reason for game over
+  const [cockpitSmokeOpacity, setCockpitSmokeOpacity] = useState(0) // Opacity of smoke filling cockpit (0-1)
+  const [gameCleared, setGameCleared] = useState(false) // Game cleared state (successful landing)
+  const [gameClearedOpacity, setGameClearedOpacity] = useState(0) // Opacity of game cleared overlay (0-1)
   const flightDataClientRef = useRef(null)
   const flightDataChannelRef = useRef(null)
   const smokeAffectedEnginesRef = useRef(smokeAffectedEngines)
   const vibrationAffectedEnginesRef = useRef(vibrationAffectedEngines)
   const hasEverHadEffectsRef = useRef(hasEverHadEffects)
   const coordinateIntervalRef = useRef(null)
+  const vibrationTimerRef = useRef(null)
+  const smokeTimerRef = useRef(null)
+  const smokeFillIntervalRef = useRef(null)
+  const vibrationStartTimesRef = useRef({})
+  const smokeStartTimesRef = useRef({})
+  const turnedOffEnginesRef = useRef(turnedOffEngines)
+  const gameOverRef = useRef(gameOver)
   const latitudeRef = useRef(null)
   const longitudeRef = useRef(null)
   const headingRef = useRef(null)
@@ -47,6 +62,10 @@ export default function Page2() {
   const toggleEngine1SwitchRef = useRef(null) // Ref to store the toggleEngine1Switch function from Cockpit
   const toggleEngine2SwitchRef = useRef(null) // Ref to store the toggleEngine2Switch function from Cockpit
   const [notesCollapsed, setNotesCollapsed] = useState(false) // For collapsing notes
+  const [autopilotEngaged, setAutopilotEngaged] = useState(false) // Autopilot engagement state
+  const [autopilotTarget, setAutopilotTarget] = useState(null) // { name, lat, lon } of target airport
+  const autopilotTargetRef = useRef(null)
+  const autopilotEngagedRef = useRef(false)
 
   // Format coordinates for display
   const formatCoordinates = (lat, lon) => {
@@ -65,6 +84,24 @@ export default function Page2() {
     const lonSec = ((lonAbs - lonDeg - lonMin / 60) * 3600).toFixed(2)
     
     return `${latDeg}°${latMin}'${latSec}" ${latDir}, ${lonDeg}°${lonMin}'${lonSec}" ${lonDir}`
+  }
+
+  // Calculate maximum range based on engine status
+  // An engine is considered "off" if it's turned off OR if it's smoking (even if still on)
+  const calculateMaxRange = () => {
+    const engine1Off = turnedOffEngines.includes('engine1') || smokeAffectedEngines.includes('engine1')
+    const engine2Off = turnedOffEngines.includes('engine2') || smokeAffectedEngines.includes('engine2')
+    
+    if (engine1Off && engine2Off) {
+      // Both engines off or smoking: 60 miles
+      return 60
+    } else if (engine1Off || engine2Off) {
+      // One engine off or smoking: 100 miles
+      return 100
+    } else {
+      // Both engines on and not smoking: 120 miles (defect limit)
+      return 120
+    }
   }
 
   // Keep refs in sync with state
@@ -128,6 +165,11 @@ export default function Page2() {
       setSpeed(null)
       setFlightId('')
       setFlightPath([])
+      setMilesFlown(0)
+      setAutopilotEngaged(false)
+      setAutopilotTarget(null)
+      setGameCleared(false)
+      setGameClearedOpacity(0)
       if (coordinateIntervalRef.current) {
         clearInterval(coordinateIntervalRef.current)
         coordinateIntervalRef.current = null
@@ -175,6 +217,11 @@ export default function Page2() {
         const boundedLat = Math.max(24, Math.min(50, newLat))
         const boundedLon = Math.max(-125, Math.min(-66, newLon))
         
+        // Track distance traveled: 1 knot = 1.15078 statute miles per hour
+        // Distance in statute miles per second = speed (knots) * 1.15078 / 3600
+        const distanceMiles = (currentSpeed * 1.15078) / 3600
+        setMilesFlown((prev) => prev + distanceMiles)
+        
         // Update state (refs will be updated by the sync useEffect)
         setLatitude(boundedLat)
         setLongitude(boundedLon)
@@ -188,6 +235,19 @@ export default function Page2() {
       }
     }
   }, [sessionReady, latitude, longitude, heading, speed])
+
+  // Check if miles remaining reaches 0 and trigger game over
+  useEffect(() => {
+    if (!sessionReady || gameOver) return // Don't check if game is already over
+    
+    const maxRange = calculateMaxRange()
+    const milesLeft = Math.max(0, maxRange - milesFlown)
+    
+    if (milesLeft <= 0) {
+      setGameOver(true)
+      setGameOverReason('your plane was losing altitude and unable to fly further, causing it to crash with zero survivors.')
+    }
+  }, [milesFlown, turnedOffEngines, smokeAffectedEngines, sessionReady, gameOver])
 
   // Set up Ably channel for flight data broadcasting
   useEffect(() => {
@@ -256,6 +316,9 @@ export default function Page2() {
           heading,
           speed,
           timestamp: Date.now(),
+          gameCleared: gameCleared || false,
+          gameOver: gameOver || false,
+          gameOverReason: gameOverReason || '',
         }).catch(err => console.error('Failed to publish flight data', err))
         
         // Add to flight path (keep last 100 points, add point every 5 seconds to avoid too many points)
@@ -271,7 +334,7 @@ export default function Page2() {
         })
       }
     }
-  }, [latitude, longitude, heading, speed, flightId])
+  }, [latitude, longitude, heading, speed, flightId, gameCleared, gameOver, gameOverReason])
 
   // Start countdown when session becomes ready
   useEffect(() => {
@@ -372,6 +435,31 @@ export default function Page2() {
   useEffect(() => {
     hasEverHadEffectsRef.current = hasEverHadEffects
   }, [hasEverHadEffects])
+
+  useEffect(() => {
+    vibrationStartTimesRef.current = vibrationStartTimes
+  }, [vibrationStartTimes])
+
+  useEffect(() => {
+    smokeStartTimesRef.current = smokeStartTimes
+  }, [smokeStartTimes])
+
+  useEffect(() => {
+    turnedOffEnginesRef.current = turnedOffEngines
+  }, [turnedOffEngines])
+
+  useEffect(() => {
+    gameOverRef.current = gameOver
+  }, [gameOver])
+
+  // Keep autopilot refs in sync
+  useEffect(() => {
+    autopilotEngagedRef.current = autopilotEngaged
+  }, [autopilotEngaged])
+
+  useEffect(() => {
+    autopilotTargetRef.current = autopilotTarget
+  }, [autopilotTarget])
 
   // Sync note 5 checkboxes (smoke/vibration) with actual engine states
   // But also allow checkbox to control smoke (bidirectional sync)
@@ -508,6 +596,323 @@ export default function Page2() {
     }
   }, [checkedItems, smokeAffectedEngines, vibrationAffectedEngines, sessionReady, hasEverHadEffects, turnedOffEngines])
 
+  // Track vibration duration and apply smoke after 1 minute if engine is not shut off
+  useEffect(() => {
+    if (!sessionReady) {
+      // Clear timers and reset state when session ends
+      if (vibrationTimerRef.current) {
+        clearInterval(vibrationTimerRef.current)
+        vibrationTimerRef.current = null
+      }
+      setVibrationStartTimes({})
+      return
+    }
+
+    const allEngines = ['engine1', 'engine2']
+    const oneMinute = 60000 // 1 minute in milliseconds
+
+    // Update vibration start times: start tracking when vibration begins, reset when engine is turned off
+    setVibrationStartTimes((prevTimes) => {
+      const newTimes = { ...prevTimes }
+      const now = Date.now()
+      
+      allEngines.forEach((engine) => {
+        const isVibrating = vibrationAffectedEngines.includes(engine)
+        const isTurnedOff = turnedOffEngines.includes(engine)
+        const wasVibrating = prevTimes[engine] !== undefined
+        
+        if (isTurnedOff) {
+          // Engine is turned off: reset timer
+          delete newTimes[engine]
+        } else if (isVibrating && !wasVibrating) {
+          // Vibration just started: record start time
+          newTimes[engine] = now
+        } else if (!isVibrating && wasVibrating) {
+          // Vibration stopped: clear timer
+          delete newTimes[engine]
+        }
+        // If vibrating and was already vibrating, keep the existing start time
+      })
+      
+      return newTimes
+    })
+
+    // Check every second if any engine has been vibrating for 1 minute
+    vibrationTimerRef.current = setInterval(() => {
+      const currentTime = Date.now()
+      const currentVibrationStartTimes = vibrationStartTimesRef.current
+      const currentVibrationAffected = vibrationAffectedEnginesRef.current
+      const currentTurnedOff = turnedOffEnginesRef.current
+      const currentSmokeAffected = smokeAffectedEnginesRef.current
+      
+      allEngines.forEach((engine) => {
+        const isVibrating = currentVibrationAffected.includes(engine)
+        const isTurnedOff = currentTurnedOff.includes(engine)
+        const isSmoking = currentSmokeAffected.includes(engine)
+        const vibrationStartTime = currentVibrationStartTimes[engine]
+        
+        // If engine is vibrating, not turned off, not already smoking, and has been vibrating for 1+ minute
+        if (isVibrating && !isTurnedOff && !isSmoking && vibrationStartTime) {
+          const vibrationDuration = currentTime - vibrationStartTime
+          if (vibrationDuration >= oneMinute) {
+            // Apply smoke to this engine
+            setSmokeAffectedEngines((prev) => {
+              if (!prev.includes(engine)) {
+                return [...prev, engine]
+              }
+              return prev
+            })
+            setHasEverHadSmoke(true)
+            setHasEverHadEffects(true)
+            // Reset the vibration start time since we've applied smoke
+            setVibrationStartTimes((prev) => {
+              const updated = { ...prev }
+              delete updated[engine]
+              return updated
+            })
+          }
+        }
+      })
+    }, 1000) // Check every second
+
+    return () => {
+      if (vibrationTimerRef.current) {
+        clearInterval(vibrationTimerRef.current)
+        vibrationTimerRef.current = null
+      }
+    }
+  }, [sessionReady, vibrationAffectedEngines, turnedOffEngines])
+
+  // Track smoke duration and trigger game over after 30 seconds
+  useEffect(() => {
+    if (!sessionReady) {
+      // Clear timers and reset state when session ends
+      if (smokeTimerRef.current) {
+        clearInterval(smokeTimerRef.current)
+        smokeTimerRef.current = null
+      }
+      if (smokeFillIntervalRef.current) {
+        clearInterval(smokeFillIntervalRef.current)
+        smokeFillIntervalRef.current = null
+      }
+      setSmokeStartTimes({})
+      setGameOver(false)
+      setGameOverReason('')
+      setCockpitSmokeOpacity(0)
+      return
+    }
+
+    // If game is over, stop the smoke timer but let the fill animation continue
+    if (gameOver) {
+      if (smokeTimerRef.current) {
+        clearInterval(smokeTimerRef.current)
+        smokeTimerRef.current = null
+      }
+      return
+    }
+
+    const allEngines = ['engine1', 'engine2']
+    const thirtySeconds = 30000 // 30 seconds in milliseconds
+
+    // Update smoke start times: start tracking when smoke begins, reset when engine is turned off
+    setSmokeStartTimes((prevTimes) => {
+      const newTimes = { ...prevTimes }
+      const now = Date.now()
+      
+      allEngines.forEach((engine) => {
+        const isSmoking = smokeAffectedEngines.includes(engine)
+        const isTurnedOff = turnedOffEngines.includes(engine)
+        const wasSmoking = prevTimes[engine] !== undefined
+        
+        if (isTurnedOff) {
+          // Engine is turned off: reset timer
+          delete newTimes[engine]
+        } else if (isSmoking && !wasSmoking) {
+          // Smoke just started: record start time
+          newTimes[engine] = now
+        } else if (!isSmoking && wasSmoking) {
+          // Smoke stopped: clear timer
+          delete newTimes[engine]
+        }
+        // If smoking and was already smoking, keep the existing start time
+      })
+      
+      return newTimes
+    })
+
+    // Check every second if any engine has been smoking for 30+ seconds
+    smokeTimerRef.current = setInterval(() => {
+      const currentTime = Date.now()
+      const currentSmokeStartTimes = smokeStartTimesRef.current
+      const currentSmokeAffected = smokeAffectedEnginesRef.current
+      const currentTurnedOff = turnedOffEnginesRef.current
+      
+      let hasSmokingFor30Seconds = false
+      const enginesThatCausedGameOver = []
+      
+      allEngines.forEach((engine) => {
+        const isSmoking = currentSmokeAffected.includes(engine)
+        const isTurnedOff = currentTurnedOff.includes(engine)
+        const smokeStartTime = currentSmokeStartTimes[engine]
+        
+        // If engine is smoking, not turned off, and has been smoking for 30+ seconds
+        if (isSmoking && !isTurnedOff && smokeStartTime) {
+          const smokeDuration = currentTime - smokeStartTime
+          if (smokeDuration >= thirtySeconds) {
+            hasSmokingFor30Seconds = true
+            enginesThatCausedGameOver.push(engine)
+          }
+        }
+      })
+      
+      if (hasSmokingFor30Seconds && !gameOverRef.current) {
+        // Generate game over reason message
+        let reason = ''
+        if (enginesThatCausedGameOver.length === 2) {
+          reason = 'Both engines smoking for too long, causing the fire and smoke to spread, leading to a fatal crash'
+        } else if (enginesThatCausedGameOver.includes('engine1')) {
+          reason = 'Left engine smoking for too long, causing the fire and smoke to spread, leading to a fatal crash'
+        } else if (enginesThatCausedGameOver.includes('engine2')) {
+          reason = 'Right engine smoking for too long, causing the fire and smoke to spread, leading to a fatal crash'
+        }
+        
+        // Trigger game over
+        setGameOver(true)
+        setGameOverReason(reason)
+        // Gradually fill cockpit with smoke over 5 seconds
+        const startTime = Date.now()
+        const fillDuration = 5000 // 5 seconds
+        
+        // Start with initial opacity
+        setCockpitSmokeOpacity(0)
+        
+        smokeFillIntervalRef.current = setInterval(() => {
+          const elapsed = Date.now() - startTime
+          const progress = Math.min(elapsed / fillDuration, 1)
+          setCockpitSmokeOpacity(progress)
+          
+          if (progress >= 1) {
+            if (smokeFillIntervalRef.current) {
+              clearInterval(smokeFillIntervalRef.current)
+              smokeFillIntervalRef.current = null
+            }
+          }
+        }, 16) // Update every ~16ms (60fps) for smooth animation
+      }
+    }, 1000) // Check every second
+
+    return () => {
+      if (smokeTimerRef.current) {
+        clearInterval(smokeTimerRef.current)
+        smokeTimerRef.current = null
+      }
+      // Don't clear smokeFillIntervalRef here - let it complete its animation
+    }
+  }, [sessionReady, smokeAffectedEngines, turnedOffEngines, gameOver])
+
+  // Cleanup smoke fill interval only when session ends
+  useEffect(() => {
+    return () => {
+      if (smokeFillIntervalRef.current) {
+        clearInterval(smokeFillIntervalRef.current)
+        smokeFillIntervalRef.current = null
+      }
+    }
+  }, [sessionReady])
+
+  // Calculate distance between two coordinates in miles (Haversine formula)
+  const calculateDistance = (lat1, lon1, lat2, lon2) => {
+    const R = 3959 // Earth's radius in miles
+    const dLat = (lat2 - lat1) * Math.PI / 180
+    const dLon = (lon2 - lon1) * Math.PI / 180
+    const a = 
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2)
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+    return R * c
+  }
+
+  // Handle autopilot recommendation - engage autopilot to navigate to airport
+  const handleAutopilotClick = (airportName, airportLat, airportLon) => {
+    if (latitude === null || longitude === null || airportLat === null || airportLon === null) {
+      console.error('Cannot set autopilot: missing coordinates')
+      return
+    }
+
+    // Engage autopilot
+    setAutopilotEngaged(true)
+    setAutopilotTarget({ name: airportName, lat: airportLat, lon: airportLon })
+    console.log(`[Page 2] Autopilot engaged: Navigating towards ${airportName}`)
+  }
+
+  // Continuously update heading towards target airport while autopilot is engaged
+  useEffect(() => {
+    if (!autopilotEngaged || !autopilotTarget || !sessionReady || gameOver) {
+      return
+    }
+
+    const autopilotInterval = setInterval(() => {
+      const currentLat = latitudeRef.current
+      const currentLon = longitudeRef.current
+      const target = autopilotTargetRef.current
+      const isEngaged = autopilotEngagedRef.current
+
+      if (!isEngaged || !target || currentLat === null || currentLon === null) {
+        return
+      }
+
+      // Calculate distance to target
+      const distance = calculateDistance(currentLat, currentLon, target.lat, target.lon)
+
+      // If within 0.5 miles of airport, stop autopilot and plane, and clear the game
+      if (distance <= 0.5) {
+        console.log(`[Page 2] Autopilot: Reached ${target.name} (${distance.toFixed(2)} miles away)`)
+        setAutopilotEngaged(false)
+        setAutopilotTarget(null)
+        setSpeed(0) // Stop the plane
+        setGameCleared(true) // Trigger game cleared state
+        
+        // Gradually fade in the game cleared overlay over 2 seconds
+        const startTime = Date.now()
+        const fadeDuration = 2000 // 2 seconds
+        const fadeInterval = setInterval(() => {
+          const elapsed = Date.now() - startTime
+          const progress = Math.min(elapsed / fadeDuration, 1)
+          setGameClearedOpacity(progress)
+          
+          if (progress >= 1) {
+            clearInterval(fadeInterval)
+          }
+        }, 16) // Update every ~16ms (60fps)
+        
+        return
+      }
+
+      // Calculate bearing from current position to airport
+      const lat1 = currentLat * Math.PI / 180
+      const lon1 = currentLon * Math.PI / 180
+      const lat2 = target.lat * Math.PI / 180
+      const lon2 = target.lon * Math.PI / 180
+
+      const dLon = lon2 - lon1
+
+      const y = Math.sin(dLon) * Math.cos(lat2)
+      const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon)
+
+      // Calculate bearing in degrees (0-360, where 0° = North)
+      let bearing = Math.atan2(y, x) * 180 / Math.PI
+      bearing = (bearing + 360) % 360 // Normalize to 0-360
+
+      // Update plane heading to point towards airport
+      setHeading(bearing)
+    }, 1000) // Update every second
+
+    return () => {
+      clearInterval(autopilotInterval)
+    }
+  }, [autopilotEngaged, autopilotTarget, sessionReady, gameOver])
+
   return (
     <main
       style={{
@@ -537,7 +942,15 @@ export default function Page2() {
           }}
         >
                  {[
-                   { title: 'Flight Instruments', text: 'Altimeter\nAirspeed Indicator\nHeading Indicator\nAttitude Indicator\nTurn Coordinator\nVertical Speed Indicator', hasCheckboxes: false },
+                   { 
+                     title: 'Flight Instruments', 
+                     text: (() => {
+                       const maxRange = calculateMaxRange()
+                       const milesLeft = Math.max(0, maxRange - milesFlown)
+                       return `Total Miles Able to Fly: ${maxRange.toFixed(1)} miles (updated)\nMiles Flown Since Start: ${milesFlown.toFixed(1)} miles (updated)\nMiles Remaining: ${milesLeft.toFixed(1)} miles (updated)`
+                     })(), 
+                     hasCheckboxes: false 
+                   },
                    { title: 'Cockpit Warning System', text: 'ANTI ICE\nENG\nHYD\nOVERHEAD\nDOORS\nAIR COND', hasCheckboxes: true },
                    { title: 'Engine Instruments', text: 'Tachometers\nTemperature Gauges\nFuel Quantity\nOil Quantity\nEngine pressure gauges', hasCheckboxes: false },
                    { 
@@ -725,7 +1138,14 @@ export default function Page2() {
                 }
               }}
               chatComponent={sessionReady && roomCode ? (
-                <ChatConnection roomCode={roomCode} pageId="Page 2" position="inline" />
+                <ChatConnection 
+                  roomCode={roomCode} 
+                  pageId="Page 2" 
+                  position="inline" 
+                  onAutopilotClick={handleAutopilotClick}
+                  autopilotEngaged={autopilotEngaged}
+                  autopilotTarget={autopilotTarget}
+                />
               ) : null}
               navigationData={{
                 latitude,
@@ -970,7 +1390,8 @@ export default function Page2() {
       )}
 
       {/* Engine buttons - only show after session is ready */}
-      {sessionReady && (
+      {/* Hidden - original engine 1 and engine 2 buttons on bottom left */}
+      {false && sessionReady && (
         <div
           style={{
             position: 'absolute',
@@ -1113,6 +1534,150 @@ export default function Page2() {
           }
         `
       }} />
+
+      {/* Smoke overlay - fills cockpit when engines smoke for 30+ seconds */}
+      {cockpitSmokeOpacity > 0 && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            background: `rgba(30, 30, 30, ${cockpitSmokeOpacity * 0.95})`,
+            zIndex: 9998,
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
+      {/* Game Cleared overlay */}
+      {gameCleared && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            background: `rgba(0, 0, 0, ${gameClearedOpacity * 0.85})`,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            pointerEvents: 'none',
+            transition: 'background 0.1s ease-out',
+          }}
+        >
+          <h1
+            style={{
+              fontSize: '72px',
+              fontWeight: 700,
+              color: '#f8fafc',
+              margin: 0,
+              marginBottom: '24px',
+              fontFamily: 'monospace',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              opacity: gameClearedOpacity,
+              transition: 'opacity 0.1s ease-out',
+            }}
+          >
+            GAME CLEARED
+          </h1>
+          <p
+            style={{
+              fontSize: '20px',
+              color: '#f8fafc',
+              margin: 0,
+              marginBottom: '24px',
+              opacity: 0.9 * gameClearedOpacity,
+              fontFamily: 'monospace',
+              textAlign: 'center',
+              maxWidth: '800px',
+              lineHeight: 1.5,
+              transition: 'opacity 0.1s ease-out',
+            }}
+          >
+            successfully landed at an airport
+          </p>
+          <p
+            style={{
+              fontSize: '24px',
+              color: '#f8fafc',
+              margin: 0,
+              opacity: 0.9 * gameClearedOpacity,
+              fontFamily: 'monospace',
+              transition: 'opacity 0.1s ease-out',
+            }}
+          >
+            refresh the page to restart
+          </p>
+        </div>
+      )}
+
+      {/* Game Over overlay */}
+      {gameOver && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            width: '100vw',
+            height: '100vh',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            pointerEvents: 'none',
+          }}
+        >
+          <h1
+            style={{
+              fontSize: '72px',
+              fontWeight: 700,
+              color: '#f8fafc',
+              margin: 0,
+              marginBottom: '24px',
+              fontFamily: 'monospace',
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+            }}
+          >
+            GAME OVER
+          </h1>
+          {gameOverReason && (
+            <p
+              style={{
+                fontSize: '20px',
+                color: '#f8fafc',
+                margin: 0,
+                marginBottom: '24px',
+                opacity: 0.9,
+                fontFamily: 'monospace',
+                textAlign: 'center',
+                maxWidth: '800px',
+                lineHeight: 1.5,
+              }}
+            >
+              {gameOverReason}
+            </p>
+          )}
+          <p
+            style={{
+              fontSize: '24px',
+              color: '#f8fafc',
+              margin: 0,
+              opacity: 0.9,
+              fontFamily: 'monospace',
+            }}
+          >
+            Refresh the page to restart
+          </p>
+        </div>
+      )}
     </main>
   )
 }

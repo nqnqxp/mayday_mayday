@@ -19,7 +19,7 @@ const generateFlightId = () => {
   return `${prefix} ${number}`
 }
 
-export default function ChatConnection({ roomCode, pageId, position = 'bottom-right', onConnectionChange }) {
+export default function ChatConnection({ roomCode, pageId, position = 'bottom-right', onConnectionChange, onAutopilotClick, autopilotEngaged, autopilotTarget }) {
   const [connectionState, setConnectionState] = useState('idle') // idle, requesting, requested, pending, connected
   const [flightId, setFlightId] = useState('')
   const [pendingFlightId, setPendingFlightId] = useState('')
@@ -438,6 +438,9 @@ export default function ChatConnection({ roomCode, pageId, position = 'bottom-ri
           onConnectReady={setConnectChat}
           sharedClient={realtimeRef.current}
           sharedChannel={channelRef.current}
+          onAutopilotClick={onAutopilotClick}
+          autopilotEngaged={autopilotEngaged}
+          autopilotTarget={autopilotTarget}
         />
       </div>
     )

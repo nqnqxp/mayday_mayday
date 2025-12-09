@@ -396,8 +396,35 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
                   let elementToInteract = interactiveElement
                   if (!elementToInteract && chatContainerRef.current) {
                     // Try to find buttons or inputs - check which one is closest to click position
+                    // Prioritize autopilot buttons
+                    const autopilotButtons = Array.from(chatContainerRef.current.querySelectorAll('[data-autopilot-button="true"]'))
                     const allInteractive = Array.from(chatContainerRef.current.querySelectorAll('button, input, textarea'))
-                    if (allInteractive.length > 0) {
+                    
+                    if (autopilotButtons.length > 0) {
+                      // Find the autopilot button closest to click position
+                      let closestAutopilot = null
+                      let closestDistance = Infinity
+                      
+                      autopilotButtons.forEach((el) => {
+                        const rect = el.getBoundingClientRect()
+                        const elCenterX = rect.left + rect.width / 2
+                        const elCenterY = rect.top + rect.height / 2
+                        const distance = Math.sqrt(
+                          Math.pow(clickX - elCenterX, 2) + Math.pow(clickY - elCenterY, 2)
+                        )
+                        if (distance < closestDistance) {
+                          closestDistance = distance
+                          closestAutopilot = el
+                        }
+                      })
+                      
+                      if (closestAutopilot && closestDistance < 150) { // Within 150px for autopilot buttons
+                        elementToInteract = closestAutopilot
+                        console.warn('🟢 Found autopilot button:', closestAutopilot.getAttribute('data-airport-name'), closestDistance.toFixed(1) + 'px away')
+                      }
+                    }
+                    
+                    if (!elementToInteract && allInteractive.length > 0) {
                       // Find the element closest to the click position
                       let closestElement = null
                       let closestDistance = Infinity
@@ -979,6 +1006,8 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
     const handle01 = findElement(scene, 'handle01')
     const handlebase02 = findElement(scene, 'handlebase02')
     
+    let engine1OriginalY = null
+    
     if (handle01 && handlebase02) {
       // Update world matrices to ensure we get accurate positions
       handle01.updateMatrixWorld(true)
@@ -992,6 +1021,9 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
       // Store these immediately after finding the elements to preserve original state
       handle01.userData.originalPosition = handle01.position.clone()
       handlebase02.userData.originalPosition = handlebase02.position.clone()
+      
+      // Store the Y position to match engine 2's height
+      engine1OriginalY = handle01.userData.originalPosition.y
       
       // Store a marker object to identify this as the engine switch group
       // We'll check both meshes individually in raycasting
@@ -1016,6 +1048,19 @@ export default function Cockpit({ position = [0, 0, 0], rotation = [0, 0, 0], sc
       // Store these immediately after finding the elements to preserve original state
       handle02.userData.originalPosition = handle02.position.clone()
       handlebase01.userData.originalPosition = handlebase01.position.clone()
+      
+      // Match engine 2's original Y position to engine 1's height
+      if (engine1OriginalY !== null) {
+        // Calculate the Y offset difference between the two switches
+        const yOffset = engine1OriginalY - handle02.userData.originalPosition.y
+        // Adjust engine 2's original position to match engine 1's height
+        handle02.userData.originalPosition.y = engine1OriginalY
+        handlebase01.userData.originalPosition.y += yOffset
+        
+        // Also set the current position to match (so it's consistent from the start)
+        handle02.position.y = engine1OriginalY
+        handlebase01.position.y += yOffset
+      }
       
       // Store a marker object to identify this as the engine switch group
       // We'll check both meshes individually in raycasting
